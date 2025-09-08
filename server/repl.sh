@@ -14,21 +14,21 @@ fi
 SERVER="http://oak.lan:8000"
 
 # Create a new session id
-SESSION_ID="$(curl -sS oak.lan:8000/new-session)"
+SESSION_ID="$(curl -sS ${SERVER}/new-session)"
 echo -e "Now chatting with ${CYAN}smollm${RESET} (via oak.lan) | SESSION_ID: ${SESSION_ID}"
 
 while true; do
     # Read user input
     read -er -p "$(echo -e "${GREEN}(you) > ${RESET}")" prompt
 
-    payload="$(jq -n --arg sessionId "$SESSION_ID" --arg msg "$prompt" \
+    # Format JSON payload
+    payload="$(jq -n --arg sessionId "${SESSION_ID}" --arg msg "${prompt}" \
         '{sessionId:$sessionId, msg:$msg}')"
 
     # Send input to server and get response
-    response="$(curl -fsS -X POST "$SERVER/chat" \
+    echo -en "${CYAN}(smollm) >${RESET} "
+    curl -fsSLN -X POST "${SERVER}/chat" \
         -H "Content-Type: application/json" \
-        --data "$payload")"
-
-    # Print model reply
-    echo -e "${CYAN}(smollm) >${RESET} ${response}"
+        --data "${payload}"
+    echo ""
 done

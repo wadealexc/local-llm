@@ -32,7 +32,7 @@ app.get('/new-session', (req, res) => {
 });
 
 app.post('/chat', async (req, res) => {
-    // console.log(req.body);
+    console.log(req.body);
 
     const sessionId = req.body?.sessionId;
     const msg = req.body?.msg;
@@ -70,6 +70,7 @@ app.post('/chat', async (req, res) => {
     for await (const part of response) {
         finalResponse += part.message.content;
         process.stdout.write(part.message.content);
+        res.write(part.message.content);
 
         // loadDuration = part.load_duration;
         // evalDuration = part.eval_duration;
@@ -83,11 +84,12 @@ app.post('/chat', async (req, res) => {
     } else {
         const seconds = Number(totalDuration) / 1e9;
         console.log(`\n... done (took ${seconds.toFixed(3)} s)`);
+        res.write(`\n(done in ${seconds.toFixed(3)} seconds)`);
     }
 
-    // Send response to client
+    // Add final response to message history
     messages.push({ role: LLM_ROLE, content: finalResponse });
-    res.send(finalResponse);
+    res.end();
 });
 
 app.listen(PORT, () => {
