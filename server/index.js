@@ -65,13 +65,25 @@ app.post('/chat', async (req, res) => {
         stream: true,
     });
 
+    let totalDuration;
     let finalResponse = '';
     for await (const part of response) {
         finalResponse += part.message.content;
         process.stdout.write(part.message.content);
+
+        // loadDuration = part.load_duration;
+        // evalDuration = part.eval_duration;
+        totalDuration = part.total_duration;
     }
 
-    console.log("\n... done.");
+    // Output total duration in seconds
+    if (typeof totalDuration !== 'number') {
+        console.log("\n... done.");
+        console.log(`totalDuration is not number. Got: ${totalDuration}`);
+    } else {
+        const seconds = Number(totalDuration) / 1e9;
+        console.log(`\n... done (took ${seconds.toFixed(3)} s)`);
+    }
 
     // Send response to client
     messages.push({ role: LLM_ROLE, content: finalResponse });
