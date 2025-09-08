@@ -3,9 +3,9 @@ import express from 'express';
 import ollama from 'ollama';
 import { randomInt } from 'crypto';
 
+import { User } from './user.js';
+
 const MODEL = 'smollm';
-const USER_ROLE = 'user';
-const LLM_ROLE = 'assistant';
 
 const PORT = 8000;
 const app = express();
@@ -14,49 +14,85 @@ app.use(express.json());
 const REPL_FILE = "./repl.sh";
 const REPL_SCRIPT = readFileSync(REPL_FILE);
 
-let sessions = new Map();
+// map 'username -> User'
+let users = new Map();
 
 app.get('/', (req, res) => {
     res.type('text/plain');
     res.send(REPL_SCRIPT);
 });
 
-app.get('/new-session', (req, res) => {
-    const sessionId = randomInt(1, 1_000_001).toString();
-    console.log(`New session created for ${req.ip}: ${sessionId}`);
+app.post('/login', (req, res) => {
+    let username = req.body?.username;
+    if (typeof username !== 'string') {
+        return res.status(400).type('text/plain').send('invalid username');
+    }
 
-    // Create a new session with empty message history
-    sessions.set(sessionId, []);
+    // Trim whitespace and convert to lowercase
+    username = username.trim().toLowerCase();
+    if (username === '') {
+        username = 'guest';
+    }
 
-    res.send(sessionId);
+    console.log(`user logged in: ${username}`);
+
+    // Create a new user if it doesn't exist
+    if (!users.has(username)) {
+        console.log(`created new user`);
+        users.set(username, new User());
+    }
+
+    // Respond with normalized username
+    res.send(username);
 });
 
-app.post('/chat', async (req, res) => {
+/**
+ * 1. Basic chat:
+ * 
+ * request: {
+ *   "username": "fox",
+ *   "data": "hi llm, how are you"
+ * }
+ * 
+ * 2. Commands:
+ * 
+ * request: {
+ *   "username": "fox",
+ *   "data": ".help"
+ * }
+ */
+app.post('/eval', async (req, res) => {
     console.log(req.body);
 
-    const sessionId = req.body?.sessionId;
+    const username = req.body?.username;
     const msg = req.body?.msg;
-    // const model = req.body?.model || DEFAULT_MODEL;
 
     // Input validation:
-    // - sessionId disallows undefined/null/empty string/0
+    // - username disallows undefined/null/empty string/0
     // - msg disallows undefined/null
-    if (!sessionId || typeof sessionId !== 'string') {
-        return res.status(400).type('text/plain').send('invalid session id');
+    if (!username || typeof username !== 'string' || !users.has(username)) {
+        return res.status(400).type('text/plain').send('malformed username');
+    } else if (!users.has(username)) {
+        return res.status(400).type('text/plain').send('user not found');
     } else if (typeof msg !== 'string') {
         return res.status(400).type('text/plain').send('missing msg');
     }
 
-    // Get message history from sessionId, and push new message to history
-    let messages = sessions.get(sessionId);
-    messages.push({ role: USER_ROLE, content: msg });
-
     console.log(
         `Got message:
                 - ip: ${req.ip}
-                - sessionId: ${sessionId}
+                - username: ${username}
                 - message: ${msg}`
     );
+
+    // Parse commands (TODO)
+    if (msg === '.help') {
+        return res.send('example help text');
+    }
+
+    // Get message history from user
+    let user = users.get(username);
+    let messages = user.pushUserMessage(msg);
 
     // Stream response from model
     const response = await ollama.chat({
@@ -88,7 +124,7 @@ app.post('/chat', async (req, res) => {
     }
 
     // Add final response to message history
-    messages.push({ role: LLM_ROLE, content: finalResponse });
+    user.pushLLMMessage(finalResponse);
     res.end();
 });
 
