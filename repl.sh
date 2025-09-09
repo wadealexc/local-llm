@@ -2,6 +2,8 @@
 set -euo pipefail
 
 SERVER="http://oak.lan:8000"
+USERNAME=""
+CURRENT_MODEL=""
 
 # ANSI colors
 RED="\033[0;31m"
@@ -26,20 +28,35 @@ function as_user {
     echo -en "${GREEN}(${USERNAME}) >${RESET}"
 }
 
+# Print `($CURRENT_MODEL) >` in cyan
+function as_model {
+    echo -en "${CYAN}(${CURRENT_MODEL}) >${RESET}"
+}
+
 # clear terminal
 clear -x
 
 # Prompt for username. If non-empty, set as $USERNAME
-USERNAME=""
 read -er -p "enter name (or leave blank for guest): " user_input
 if [[ -n $user_input ]]; then
     USERNAME=$user_input
 fi
 
-# User login
+# JSON payload with { "username": "X" }
 uname_payload="$(jq -n --arg username "${USERNAME}" \
     '{username:$username}')"
-USERNAME="$(curl -fsSLN -X POST "${SERVER}/login" \
+
+# Login and get normalized username
+USERNAME="$(curl -fsSL -X POST "${SERVER}/login" \
+    -H "Content-Type: application/json" \
+    --data "${uname_payload}")"
+
+# Re-generate username payload in case of username normalization
+uname_payload="$(jq -n --arg username "${USERNAME}" \
+    '{username:$username}')"
+
+# Get current model
+CURRENT_MODEL="$(curl -fsSL "${SERVER}/model" \
     -H "Content-Type: application/json" \
     --data "${uname_payload}")"
 
@@ -49,7 +66,7 @@ USERNAME="$(curl -fsSLN -X POST "${SERVER}/login" \
 # - display available commands
 echo -e "$(as_system) hello, ${USERNAME}!"
 echo -e "$(as_system) 🌳 welcome to ${MAGENTA}treehouse.repl${RESET} 🌳"
-echo -e "$(as_system) type anything to chat with the default model, or enter a command:"
+echo -e "$(as_system) type anything to chat with the default model (${CYAN}${CURRENT_MODEL}${RESET}), or enter a command:"
 echo -e " ${CYAN}.help${RESET}  - display available commands"
 echo -e " ${CYAN}.login${RESET} - sign in to your user to access chat history"
 
@@ -62,8 +79,8 @@ while true; do
         '{username:$username, msg:$msg}')"
 
     # Send input to server and get response
-    echo -en "${CYAN}(smollm) >${RESET} "
-    curl -fsSLN -X POST "${SERVER}/eval" \
+    as_model
+    curl -fsSLN -X POST "${SERVER}/chat" \
         -H "Content-Type: application/json" \
         --data "${payload}"
     echo ""

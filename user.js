@@ -1,23 +1,32 @@
-const USER_ROLE = 'user';
-const LLM_ROLE = 'assistant';
+import { Chat } from './chat.js';
 
 export class User {
 
-    constructor(name) {
+    constructor(name, defaultModel) {
         this.name = name;
-        this.chat = [];
+        this._model = defaultModel;
+        this.chat = new Chat();
+        this.chat.setSystemMessage(this.model.systemPrompt);
+    }
+
+    get model() {
+        return this._model;
     }
 
     get messages() {
         return this.chat;
     }
 
+    newChat() {
+        this.chat = new Chat();
+    }
+
     pushUserMessage(m) {
-        this.chat.push({ role: USER_ROLE, content: m });
-        return this.chat;
+        this.chat.pushUserMessage(m);
+        return this.chat.messages;
     }
 
     pushLLMMessage(m) {
-        this.chat.push({ role: LLM_ROLE, content: m });
+        this.chat.pushLLMMessage(m);
     }
 }

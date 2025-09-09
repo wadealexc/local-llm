@@ -4,9 +4,16 @@ import ollama from 'ollama';
 import { randomInt } from 'crypto';
 
 import { User } from './user.js';
+import { Model } from './model.js';
 
-const MODEL = 'smollm';
+const MODEL = 'smollm2';
+const MODELS = [
+    'qwen3:4b',
+    'smollm2',
+    'smollm'
+];
 
+const HOST = 'http://oak.lan';
 const PORT = 8000;
 const app = express();
 app.use(express.json());
@@ -16,6 +23,34 @@ const REPL_SCRIPT = readFileSync(REPL_FILE);
 
 // map 'username -> User'
 let users = new Map();
+
+// Get loaded models
+let rawModels = (await ollama.list()).models;
+if (rawModels.length === 0) {
+    console.log('No models found.');
+    process.exit(1);
+}
+
+let models = [];
+console.log(`Loaded ${rawModels.length} models:`);
+for (const model of rawModels) {
+    let info = await ollama.show({ model: model.model });
+    let sysPrompt = genSystemPrompt(model.model);
+    models.push(new Model(model, info, sysPrompt));
+
+    console.log(` - ${model.name} (${info.capabilities})`);
+}
+
+// Set default model
+let preferredDefaultModel = 'qwen3:4b'
+let defaultModel = models.find(m => m.name === preferredDefaultModel);
+if (!defaultModel) {
+    console.log(`Default model ${preferredDefaultModel} not found; using ${models[0].name} instead.`);
+    defaultModel = models[0];
+}
+
+console.log(`Using default model ${defaultModel.name}. Default system prompt:`);
+console.log(defaultModel.systemPrompt);
 
 app.get('/', (req, res) => {
     res.type('text/plain');
@@ -34,16 +69,37 @@ app.post('/login', (req, res) => {
         username = 'guest';
     }
 
-    console.log(`user logged in: ${username}`);
-
     // Create a new user if it doesn't exist
     if (!users.has(username)) {
-        console.log(`created new user`);
-        users.set(username, new User());
+        console.log(`created new user: ${username}`);
+        users.set(username, new User(username, defaultModel));
     }
+
+    console.log(`user logged in: ${username}`);
 
     // Respond with normalized username
     res.send(username);
+});
+
+app.post('/model', (req, res) => {
+    let username = req.body?.username;
+    if (!username || typeof username !== 'string') {
+        return res.status(400).type('text/plain').send('malformed username');
+    } else if (!users.has(username)) {
+        return res.status(400).type('text/plain').send(`user ${username} not found`);
+    }
+
+    console.log(`user calls /model: ${username}`);
+
+    let modelName = users.get(username).model?.name;
+    if (typeof modelName !== 'string') {
+        return res.status(500).type('text/plain').send(`user ${username} does not have a valid model loaded`);
+    }
+
+    console.log(` - found model: ${modelName}`);
+
+    // Respond with name of current model
+    res.send(modelName);
 });
 
 /**
@@ -61,7 +117,7 @@ app.post('/login', (req, res) => {
  *   "data": ".help"
  * }
  */
-app.post('/eval', async (req, res) => {
+app.post('/chat', async (req, res) => {
     console.log(req.body);
 
     const username = req.body?.username;
@@ -70,10 +126,10 @@ app.post('/eval', async (req, res) => {
     // Input validation:
     // - username disallows undefined/null/empty string/0
     // - msg disallows undefined/null
-    if (!username || typeof username !== 'string' || !users.has(username)) {
+    if (!username || typeof username !== 'string') {
         return res.status(400).type('text/plain').send('malformed username');
     } else if (!users.has(username)) {
-        return res.status(400).type('text/plain').send('user not found');
+        return res.status(400).type('text/plain').send(`user ${username} not found`);
     } else if (typeof msg !== 'string') {
         return res.status(400).type('text/plain').send('missing msg');
     }
@@ -131,3 +187,17 @@ app.post('/eval', async (req, res) => {
 app.listen(PORT, () => {
     console.log(`App listening on port ${PORT}`);
 });
+
+function genSystemPrompt(modelName) {
+    let now = new Date();
+    let dateString = now.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
+    return `You are ${modelName}, a self-hosted language model running on ${HOST}.
+Current date: ${dateString}
+
+Personality:
+You are a capable, thoughtful, and precise assistant. Your goal is to understand the user's intent, ask clarifying questions when needed, think step-by-step through problems, provide clear and accurate answers, and proactively anticipate helpful follow-up information. Always prioritize being truthful, nuanced, insightful, and efficient, tailoring your responses specifically to the user's needs and preferences.`;
+}

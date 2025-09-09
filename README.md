@@ -3,11 +3,14 @@
 
 https://github.com/ollama/ollama
 
-### Run ollama service
+### Install docker image
 
 https://hub.docker.com/r/ollama/ollama
 
-`sudo docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama`
+```sh
+# CPU only
+sudo docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama
+```
 
 ### Download a model
 
@@ -30,4 +33,30 @@ const response = await ollama.chat({
 for await (const part of response) {
     process.stdout.write(part.message.content)
 }
+```
+
+### Helpful commands - Docker
+
+```sh
+# Manually start container (after reboot)
+sudo docker start ollama
+
+# List running containers
+sudo docker ps
+
+# List all images on the system
+sudo docker ps -a
+```
+
+### Helpful commands - Ollama
+
+```sh
+# List downloaded models
+sudo docker exec -it ollama ollama list
+
+# List currently-loaded models
+sudo docker exec -it ollama ollama ps
+
+# Stop a currently-loaded model
+sudo docker exec -it ollama ollama stop smollm
 ```
