@@ -1,3 +1,10 @@
+## Client/Server Model
+
+Goal is to make `client` a Dockerfile and distribute a tiny shell script that pulls the latest docker image and then runs it. Roomies just have to install docker, download the script, and they're good to go.
+
+### Client
+
+A CLI application that talks to the server
 
 ## ollama
 
