@@ -75,10 +75,20 @@ app.post('/login', (req, res) => {
         users.set(username, new User(username, defaultModel));
     }
 
+    // Get the user's default model
+    let modelName = users.get(username).model?.name;
+    if (typeof modelName !== 'string') {
+        return res.status(500).type('text/plain').send(`user ${username} does not have a valid model loaded`);
+    }
+
     console.log(`user logged in: ${username}`);
+    console.log(` - using model: ${modelName}`);
 
     // Respond with normalized username
-    res.send(username);
+    res.send({
+        'username': username,
+        'modelName': modelName
+    });
 });
 
 app.post('/model', (req, res) => {

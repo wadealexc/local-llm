@@ -6,6 +6,40 @@ Goal is to make `client` a Dockerfile and distribute a tiny shell script that pu
 
 A CLI application that talks to the server
 
+## TS
+
+```sh
+npm i --save-dev typescript
+
+# Init typescript project with tsconfig.json
+npx tsc --init
+```
+
+Add scripts to `package.json`:
+
+```json
+"scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js"
+},
+```
+
+Build/Run:
+
+```sh
+# Using a runner; instant build+run
+npx tsx src/index.js
+
+# Alt syntax for using a runner, uses dev script definition in package.json
+npm run dev
+
+# Non-runner, compiles into dist/index.js, then runs compiled js
+npm run build 
+npm start
+```
+
+
 ## ollama
 
 https://github.com/ollama/ollama
