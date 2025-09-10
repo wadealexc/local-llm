@@ -7,11 +7,11 @@ import { User } from './user.js';
 import { Model } from './model.js';
 
 const MODEL = 'smollm2';
-const MODELS = [
-    'qwen3:4b',
-    'smollm2',
-    'smollm'
-];
+// const MODELS = [
+//     'qwen3:4b',
+//     'smollm2',
+//     'smollm'
+// ];
 
 const HOST = 'http://oak.lan';
 const PORT = 8000;
@@ -52,11 +52,6 @@ if (!defaultModel) {
 console.log(`Using default model ${defaultModel.name}. Default system prompt:`);
 console.log(defaultModel.systemPrompt);
 
-app.get('/', (req, res) => {
-    res.type('text/plain');
-    res.send(REPL_SCRIPT);
-});
-
 app.post('/login', (req, res) => {
     let username = req.body?.username;
     if (typeof username !== 'string') {
@@ -91,25 +86,15 @@ app.post('/login', (req, res) => {
     });
 });
 
-app.post('/model', (req, res) => {
-    let username = req.body?.username;
-    if (!username || typeof username !== 'string') {
-        return res.status(400).type('text/plain').send('malformed username');
-    } else if (!users.has(username)) {
-        return res.status(400).type('text/plain').send(`user ${username} not found`);
+app.get('/models', (req, res) => {
+    let nameList = [];
+    for (const model of models) {
+        nameList.push(model.name);
     }
 
-    console.log(`user calls /model: ${username}`);
-
-    let modelName = users.get(username).model?.name;
-    if (typeof modelName !== 'string') {
-        return res.status(500).type('text/plain').send(`user ${username} does not have a valid model loaded`);
-    }
-
-    console.log(` - found model: ${modelName}`);
-
-    // Respond with name of current model
-    res.send(modelName);
+    res.send({
+        "models": nameList
+    });
 });
 
 /**
@@ -131,7 +116,7 @@ app.post('/chat', async (req, res) => {
     console.log(req.body);
 
     const username = req.body?.username;
-    const msg = req.body?.msg;
+    const msg = req.body?.message;
 
     // Input validation:
     // - username disallows undefined/null/empty string/0
