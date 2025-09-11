@@ -1,68 +1,54 @@
-import { readFileSync } from 'node:fs';
 import express from 'express';
-import ollama from 'ollama';
-import { randomInt } from 'crypto';
+import ollama, { type ModelResponse, type ShowResponse, type Message } from 'ollama';
+// import { randomInt } from 'crypto';
 
 import { User } from './user.js';
 import { Model } from './model.js';
 
-const MODEL = 'smollm2';
+const MODEL: string = 'smollm2';
 // const MODELS = [
 //     'qwen3:4b',
 //     'smollm2',
 //     'smollm'
 // ];
 
-const HOST = 'http://oak.lan';
-const PORT = 8000;
+const HOST: string = 'http://oak.lan';
+const PORT: number = 8000;
 const app = express();
 app.use(express.json());
 
-const REPL_FILE = "./repl.sh";
-const REPL_SCRIPT = readFileSync(REPL_FILE);
-
 // map 'username -> User'
-let users = new Map();
+let users: Map<string, User> = new Map();
 
 // Get loaded models
-let rawModels = (await ollama.list()).models;
-if (rawModels.length === 0) {
-    console.log('No models found.');
-    process.exit(1);
-}
+let rawModels: ModelResponse[] = (await ollama.list()).models;
+if (rawModels.length === 0) throw new Error('No models loaded.');
 
-let models = [];
+let models: Model[] = [];
 console.log(`Loaded ${rawModels.length} models:`);
 for (const model of rawModels) {
-    let info = await ollama.show({ model: model.model });
-    let sysPrompt = genSystemPrompt(model.model);
+    let info: ShowResponse = await ollama.show({ model: model.model });
+    let sysPrompt: string = genSystemPrompt(model.model);
     models.push(new Model(model, info, sysPrompt));
 
     console.log(` - ${model.name} (${info.capabilities})`);
 }
 
 // Set default model
-let preferredDefaultModel = 'qwen3:4b'
-let defaultModel = models.find(m => m.name === preferredDefaultModel);
-if (!defaultModel) {
-    console.log(`Default model ${preferredDefaultModel} not found; using ${models[0].name} instead.`);
-    defaultModel = models[0];
-}
+let preferredDefaultModel: string = 'qwen3:4b'
+let defaultModel: Model =
+    models.find(m => m.name === preferredDefaultModel)
+    ?? models[0]
+    ?? (() => { throw new Error('(unreachable) No models loaded.'); })();
 
 console.log(`Using default model ${defaultModel.name}. Default system prompt:`);
 console.log(defaultModel.systemPrompt);
 
 app.post('/login', (req, res) => {
-    let username = req.body?.username;
-    if (typeof username !== 'string') {
-        return res.status(400).type('text/plain').send('invalid username');
-    }
-
-    // Trim whitespace and convert to lowercase
-    username = username.trim().toLowerCase();
-    if (username === '') {
-        username = 'guest';
-    }
+    // Trim whitespace and convert to lowercase. If we're left with an empty string, use `guest`
+    let username: string = (req.body?.username as string)
+        .trim()
+        .toLowerCase() || 'guest';
 
     // Create a new user if it doesn't exist
     if (!users.has(username)) {
@@ -70,11 +56,12 @@ app.post('/login', (req, res) => {
         users.set(username, new User(username, defaultModel));
     }
 
+    let user: User =
+        users.get(username)
+        ?? (() => { throw new Error('(unreachable) User not found.'); })();
+
     // Get the user's default model
-    let modelName = users.get(username).model?.name;
-    if (typeof modelName !== 'string') {
-        return res.status(500).type('text/plain').send(`user ${username} does not have a valid model loaded`);
-    }
+    let modelName: string = user.model.name;
 
     console.log(`user logged in: ${username}`);
     console.log(` - using model: ${modelName}`);
@@ -87,7 +74,7 @@ app.post('/login', (req, res) => {
 });
 
 app.get('/models', (req, res) => {
-    let nameList = [];
+    let nameList: string[] = [];
     for (const model of models) {
         nameList.push(model.name);
     }
@@ -115,19 +102,8 @@ app.get('/models', (req, res) => {
 app.post('/chat', async (req, res) => {
     console.log(req.body);
 
-    const username = req.body?.username;
-    const msg = req.body?.message;
-
-    // Input validation:
-    // - username disallows undefined/null/empty string/0
-    // - msg disallows undefined/null
-    if (!username || typeof username !== 'string') {
-        return res.status(400).type('text/plain').send('malformed username');
-    } else if (!users.has(username)) {
-        return res.status(400).type('text/plain').send(`user ${username} not found`);
-    } else if (typeof msg !== 'string') {
-        return res.status(400).type('text/plain').send('missing msg');
-    }
+    const username: string = req.body?.username as string;
+    const msg: string = req.body?.message as string;
 
     console.log(
         `Got message:
@@ -136,14 +112,14 @@ app.post('/chat', async (req, res) => {
                 - message: ${msg}`
     );
 
-    // Parse commands (TODO)
-    if (msg === '.help') {
-        return res.send('example help text');
+    let user = users.get(username);
+    if (!user) {
+        console.log(`user ${username} not found`);
+        return res.status(400).type('text/plain').send(`user ${username} not found`);
     }
 
     // Get message history from user
-    let user = users.get(username);
-    let messages = user.pushUserMessage(msg);
+    let messages: Message[] = user.pushUserMessage(msg);
 
     // Stream response from model
     const response = await ollama.chat({
@@ -152,8 +128,8 @@ app.post('/chat', async (req, res) => {
         stream: true,
     });
 
-    let totalDuration;
-    let finalResponse = '';
+    let totalDuration: number = 0;
+    let finalResponse: string = '';
     for await (const part of response) {
         finalResponse += part.message.content;
         process.stdout.write(part.message.content);
@@ -165,14 +141,9 @@ app.post('/chat', async (req, res) => {
     }
 
     // Output total duration in seconds
-    if (typeof totalDuration !== 'number') {
-        console.log("\n... done.");
-        console.log(`totalDuration is not number. Got: ${totalDuration}`);
-    } else {
-        const seconds = Number(totalDuration) / 1e9;
-        console.log(`\n... done (took ${seconds.toFixed(3)} s)`);
-        res.write(`\n(done in ${seconds.toFixed(3)} seconds)`);
-    }
+    const seconds: number = Number(totalDuration) / 1e9;
+    console.log(`\n... done (took ${seconds.toFixed(3)} s)`);
+    res.write(`\n(done in ${seconds.toFixed(3)} seconds)`);
 
     // Add final response to message history
     user.pushLLMMessage(finalResponse);
@@ -183,7 +154,7 @@ app.listen(PORT, () => {
     console.log(`App listening on port ${PORT}`);
 });
 
-function genSystemPrompt(modelName) {
+function genSystemPrompt(modelName: string): string {
     let now = new Date();
     let dateString = now.toLocaleDateString('en-US', {
         year: 'numeric',

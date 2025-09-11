@@ -8,14 +8,38 @@ A CLI application that talks to the server
 
 ## TS
 
+### Build/Run
+
+(Assumes your `package.json` is set up)
+
+```sh
+# Alt syntax for using a runner, uses dev script definition in package.json
+npm run dev
+
+# Non-runner, compiles into dist/index.js, then runs compiled js
+npm run build 
+npm start
+```
+
+### Converting from NodeJS
+
+##### 1. Install/init TS project
+
 ```sh
 npm i --save-dev typescript
+npm i --save-dev tsx
 
 # Init typescript project with tsconfig.json
 npx tsc --init
 ```
 
-Add scripts to `package.json`:
+... then create `index.ts`
+
+##### 2. Edit `package.json`:
+
+Set `"main": "index.ts"`
+
+Add scripts:
 
 ```json
 "scripts": {
@@ -25,20 +49,9 @@ Add scripts to `package.json`:
 },
 ```
 
-Build/Run:
+##### 3. Edit `tsconfig.json`
 
-```sh
-# Using a runner; instant build+run
-npx tsx src/index.js
-
-# Alt syntax for using a runner, uses dev script definition in package.json
-npm run dev
-
-# Non-runner, compiles into dist/index.js, then runs compiled js
-npm run build 
-npm start
-```
-
+See my existing `tsconfig.json` for examples
 
 ## ollama
 
