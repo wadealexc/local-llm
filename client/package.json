@@ -1,5 +1,5 @@
 {
-  "name": "client",
+  "name": "@local-llm/client",
   "version": "1.0.0",
   "description": "",
   "main": "index.ts",
@@ -14,7 +14,8 @@
   "license": "ISC",
   "dependencies": {
     "chalk": "^5.6.2",
-    "commander": "^14.0.0"
+    "commander": "^14.0.0",
+    "@local-llm/protocol": "file:../protocol*"
   },
   "devDependencies": {
     "@types/node": "^24.3.1",

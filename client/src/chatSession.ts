@@ -1,10 +1,9 @@
 import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
-import type { StringifyOptions } from 'node:querystring';
 
 import chalk from 'chalk';
 
-import * as interfaces from './interfaces.js';
+import * as interfaces from '@local-llm/protocol';
 
 export class ChatSession {
 

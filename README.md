@@ -1,3 +1,13 @@
+## Main
+
+```sh
+# Run server
+npm run dev -w server
+
+# Run client
+npm run dev -w client
+```
+
 ## Client/Server Model
 
 Goal is to make `client` a Dockerfile and distribute a tiny shell script that pulls the latest docker image and then runs it. Roomies just have to install docker, download the script, and they're good to go.
@@ -37,7 +47,14 @@ npx tsc --init
 
 ##### 2. Edit `package.json`:
 
-Set `"main": "index.ts"`
+Set values:
+
+```json
+{
+    "main": "index.ts",
+    "type": "module"
+}
+```
 
 Add scripts:
 

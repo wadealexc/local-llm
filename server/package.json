@@ -1,5 +1,5 @@
 {
-  "name": "server",
+  "name": "@local-llm/server",
   "version": "1.0.0",
   "description": "",
   "main": "index.ts",
@@ -13,7 +13,8 @@
   "license": "ISC",
   "dependencies": {
     "express": "^5.1.0",
-    "ollama": "^0.5.17"
+    "ollama": "^0.5.17",
+    "@local-llm/protocol": "file:../protocol*"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",
