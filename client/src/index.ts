@@ -8,14 +8,6 @@ const SERVER: string = "http://oak.lan:8000";
 const chat = new ChatSession(SERVER);
 await chat.login();
 
-/**
- * TODO:
- * - better greeter page (print the actual commands)
- * - move server to ts and have a shared 'protocols' folder for interfaces
- * - implement more commands!
- * - client-side config/session storage
- * - https://www.npmjs.com/package/boxen for pretty boxes!
- */
 const program: repl.REPLServer = repl.start({
     useColors: true,
     terminal: true,

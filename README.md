@@ -16,6 +16,26 @@ Goal is to make `client` a Dockerfile and distribute a tiny shell script that pu
 
 A CLI application that talks to the server
 
+### TODOs
+
+TODO:
+- https://www.npmjs.com/package/boxen for pretty boxes!
+- features:
+    - "ctrl c" to stop ai yapping
+    - "editor" mode to edit last message/regenerate
+    - save/export chat history
+- server:
+    - remove gunk from server storing chat/user info
+- client-side config/session storage
+    - client stores chat and delivers to server
+    - better support for copy/paste in client
+    - better greeter page (print the actual commands)
+    - implement more commands!
+    - remove unneeded commands
+
+CLI vibe:
+![alt text](image.png)
+
 ## TS
 
 ### Build/Run
