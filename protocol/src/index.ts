@@ -1,24 +1,18 @@
-// /login
-export interface LoginRequest {
-    username: string
-}
-
-export interface LoginResponse {
-    username: string;
-    modelName: string
-}
+import { type Message } from 'ollama';
 
 // /chat
 export interface ChatRequest {
     username: string;
-    message: string;
+    modelName: string;
+    messages: Message[];
 }
 
 export interface ChatResponse {
     response: string;
+    totalDuration: number;
 }
 
 // /models
 export interface ModelsResponse {
-    models: string[]
+    models: string[];
 }

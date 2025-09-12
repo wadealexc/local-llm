@@ -6,7 +6,7 @@ import { ChatSession } from './chatSession.js';
 const SERVER: string = "http://oak.lan:8000";
 
 const chat = new ChatSession(SERVER);
-await chat.login();
+await chat.load();
 
 const program: repl.REPLServer = repl.start({
     useColors: true,
@@ -23,6 +23,7 @@ const program: repl.REPLServer = repl.start({
             this.output.write(chat.modelPrompt());
 
             // Stream output to process.stdout
+            let fullResponse: string = '';
             while (true) {
                 const { value, done } = await responseStream.read();
                 if (done) break;
