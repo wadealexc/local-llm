@@ -60,26 +60,9 @@ app.post('/chat', async (req, res) => {
 
     const request = req.body as iface.ChatRequest;
 
-    console.log(
-`/chat:
+    console.log(`/chat:
     - ip: ${req.ip}
     - data: ${JSON.stringify(request, null, 2)}`);
-
-//     console.log(
-// `/chat:
-//     - ip: ${req.ip}
-//     - user: ${request.username},
-//     - model: ${request.modelName}
-//     - messages:
-// `
-// );
-
-//     for (const message of request.messages) {
-//         console.log(JSON.stringify({
-//             'role': message.role,
-//             'content': message.content
-//         }));
-//     }
 
     // Stream response from model
     const response = await ollama.chat({
