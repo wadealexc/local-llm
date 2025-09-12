@@ -43,6 +43,8 @@ export class ChatSession {
 
         rl.close();
 
+        this.username = username;
+
         // Get available models from server
         const res: Response = await fetch(new URL('/models', this.server));
         if (!res.ok) throw new Error(`GET ${this.server}/models -> ${res.status} : ${res.statusText}`);
@@ -62,7 +64,7 @@ export class ChatSession {
         // TODO; switch to load from config (default model + system prompt)
         // - also TODO - load chat history here
         let preferredDefaultModel: string = 'qwen3:4b'
-        this.currentModel = 
+        this.currentModel =
             modelInfo.models.find(model => model === preferredDefaultModel)
             ?? modelInfo.models[0]
             ?? (() => { throw new Error('(unreachable) No models available.'); })();
@@ -70,8 +72,8 @@ export class ChatSession {
         // Create system prompt    
         let dateString = (new Date())
             .toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-        this.systemPrompt = 
-`You are a self-hosted language model running on ${this.server}.
+        this.systemPrompt =
+            `You are a self-hosted language model running on ${this.server}.
 Current date: ${dateString}
 
 Personality:
@@ -85,7 +87,7 @@ You are a capable, thoughtful, and precise assistant. Your goal is to understand
 
         // Greet user
         console.log(
-`hello, ${this.username}!
+            `hello, ${this.username}!
 🌳 welcome to ${chalk.magenta.bold('treehouse.repl')} 🌳
 type anything to chat with the default model (${chalk.cyan.bold(this.currentModel)})
 ... or type ${chalk.yellow.italic('.help')} to see available commands!`
@@ -94,7 +96,10 @@ type anything to chat with the default model (${chalk.cyan.bold(this.currentMode
         this.loaded = true;
     }
 
-    async prompt(input: string): Promise<ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>>> {
+    async prompt(
+        output: NodeJS.WritableStream,
+        input: string
+    ) {
         if (!this.loaded) throw new Error('Not loaded!');
 
         // Push input to chat history
@@ -117,7 +122,51 @@ type anything to chat with the default model (${chalk.cyan.bold(this.currentMode
         if (!res.body) throw new Error(`POST ${this.server}/chat -> Got ${res.status} but no response body!`);
 
         // Get ready to stream response
-        return res.body.getReader();
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        let final: iface.ChatDone | null = null;
+
+        // Start with model prompt (e.g. "(gpt4.0) > ")
+        output.write(this.modelPrompt());
+
+        // Read from stream, parsing response as newline-delimited chunks
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            buf += decoder.decode(value, { stream: true });
+
+            while (true) {
+                // Only process complete lines
+                const nl = buf.indexOf('\n');
+                if (nl === -1) break;
+
+                const line = buf.slice(0, nl);
+                buf = buf.slice(nl + 1);
+                if (!line.trim()) continue;
+
+                const evt = JSON.parse(line) as iface.ChatEvent;
+
+                switch (evt.type) {
+                    case 'delta':
+                        output.write(evt.content);
+                        break;
+                    case 'done':
+                        final = evt as iface.ChatDone;
+                        break;
+                    case 'error':
+                        throw new Error(evt.message);
+                }
+            }
+        }
+
+        if (!final) throw new Error('stream ended without final payload');
+
+        // Push LLM message to chat history and output total time taken
+        this.messages.push({ role: Role.LLM, content: final.fullResponse });
+        const seconds: number = Number(final.totalDuration) / 1e9;
+        output.write(`\n${chalk.italic.dim(`(... done in ${seconds.toFixed(3)} sec)`)}`);
     }
 
     /**

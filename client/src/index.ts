@@ -16,20 +16,7 @@ const program: repl.REPLServer = repl.start({
     output: process.stdout,
     async eval(input: string, context: Context, file: string, cb: (err: Error | null, result?: any) => void) {
         try {
-            const responseStream = await chat.prompt(input);
-            const decoder = new TextDecoder();
-            
-            // Start with model prompt (e.g. "(gpt4.0) > ")
-            this.output.write(chat.modelPrompt());
-
-            // Stream output to process.stdout
-            let fullResponse: string = '';
-            while (true) {
-                const { value, done } = await responseStream.read();
-                if (done) break;
-                this.output.write(decoder.decode(value, { stream: true }));
-            }
-
+            await chat.prompt(this.output, input);
             // Finish with a newline and redraw the user prompt
             this.output.write('\n');
             this.displayPrompt();

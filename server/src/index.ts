@@ -56,23 +56,30 @@ app.get('/models', (req, res) => {
  * }
  */
 app.post('/chat', async (req, res) => {
+    res.setHeader('Content-Type', 'application/x-ndjson');
+
     const request = req.body as iface.ChatRequest;
 
     console.log(
 `/chat:
     - ip: ${req.ip}
-    - user: ${request.username},
-    - model: ${request.modelName}
-    - messages:
-`
-);
+    - data: ${JSON.stringify(request, null, 2)}`);
 
-    for (const message of request.messages) {
-        console.log(JSON.stringify({
-            'role': message.role,
-            'content': message.content
-        }));
-    }
+//     console.log(
+// `/chat:
+//     - ip: ${req.ip}
+//     - user: ${request.username},
+//     - model: ${request.modelName}
+//     - messages:
+// `
+// );
+
+//     for (const message of request.messages) {
+//         console.log(JSON.stringify({
+//             'role': message.role,
+//             'content': message.content
+//         }));
+//     }
 
     // Stream response from model
     const response = await ollama.chat({
@@ -84,20 +91,27 @@ app.post('/chat', async (req, res) => {
     let totalDuration: number = 0;
     let finalResponse: string = '';
     for await (const part of response) {
+        totalDuration = part.total_duration;
+        
         finalResponse += part.message.content;
         process.stdout.write(part.message.content);
-        res.write(part.message.content);
 
-        // loadDuration = part.load_duration;
-        // evalDuration = part.eval_duration;
-        totalDuration = part.total_duration;
+        // Stream 'delta' response to client
+        const delta: iface.ChatDelta = { type: 'delta', content: part.message.content };
+        res.write(JSON.stringify(delta) + '\n');
     }
 
     // Output total duration in seconds
     const seconds: number = Number(totalDuration) / 1e9;
     console.log(`\n... done (took ${seconds.toFixed(3)} s)`);
-    res.write(`\n(done in ${seconds.toFixed(3)} seconds)`);
 
+    // Send 'done' response to client
+    const chatDone: iface.ChatDone = {
+        type: 'done',
+        fullResponse: finalResponse,
+        totalDuration: totalDuration,
+    };
+    res.write(JSON.stringify(chatDone) + '\n');
     res.end();
 });
 

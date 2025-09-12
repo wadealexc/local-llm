@@ -7,10 +7,23 @@ export interface ChatRequest {
     messages: Message[];
 }
 
-export interface ChatResponse {
-    response: string;
+export interface ChatDelta {
+    type: 'delta';
+    content: string;
+}
+
+export interface ChatDone {
+    type: 'done';
+    fullResponse: string;
     totalDuration: number;
 }
+
+export interface ChatError {
+    type: 'error';
+    message: string;
+}
+
+export type ChatEvent = ChatDelta | ChatDone | ChatError;
 
 // /models
 export interface ModelsResponse {
