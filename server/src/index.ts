@@ -5,13 +5,6 @@ import * as iface from '@local-llm/protocol';
 
 import { Model } from './model.js';
 
-const MODEL: string = 'smollm2';
-// const MODELS = [
-//     'qwen3:4b',
-//     'smollm2',
-//     'smollm'
-// ];
-
 const HOST: string = 'http://oak.lan';
 const PORT: number = 8000;
 const app = express();
@@ -21,11 +14,12 @@ app.use(express.json());
 let rawModels: ModelResponse[] = (await ollama.list()).models;
 if (rawModels.length === 0) throw new Error('No models loaded.');
 
-let models: Model[] = [];
+let models = new Map<string, Model>();
+
 console.log(`Loaded ${rawModels.length} models:`);
 for (const model of rawModels) {
     let info: ShowResponse = await ollama.show({ model: model.model });
-    models.push(new Model(model, info));
+    models.set(model.name, new Model(model, info));
 
     console.log(` - ${model.name} (${info.capabilities})`);
 }
@@ -33,8 +27,8 @@ for (const model of rawModels) {
 app.get('/models', (req, res) => {
     let response: iface.ModelsResponse = { models: [] }
 
-    for (const model of models) {
-        response.models.push(model.name);
+    for (const modelName of models.keys()) {
+        response.models.push(modelName);
     }
 
     res.send(response);
@@ -64,9 +58,13 @@ app.post('/chat', async (req, res) => {
     - ip: ${req.ip}
     - data: ${JSON.stringify(request, null, 2)}`);
 
+    const model: Model = models.get(request.modelName) ?? (() => {
+        throw new Error(`model ${request.modelName} not found`);
+    })();
+
     // Stream response from model
     const response = await ollama.chat({
-        model: MODEL,
+        model: model.name,
         messages: request.messages,
         stream: true,
     });

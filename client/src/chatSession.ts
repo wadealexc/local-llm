@@ -1,5 +1,5 @@
 import * as readline from 'node:readline/promises';
-import { stdin as input, stdout as output } from 'node:process';
+import { stdin as input } from 'node:process';
 import { type Message } from 'ollama';
 
 import chalk from 'chalk';
@@ -15,6 +15,7 @@ enum Role {
 export class ChatSession {
 
     private loaded: boolean = false;
+    public output: NodeJS.WritableStream;
 
     public server: string;
     public username: string = 'guest';
@@ -24,8 +25,9 @@ export class ChatSession {
 
     private messages: Message[] = [];
 
-    constructor(server: string) {
+    constructor(server: string, output: NodeJS.WritableStream) {
         this.server = server;
+        this.output = output;
     }
 
     /**
@@ -34,16 +36,6 @@ export class ChatSession {
 
     async load() {
         if (this.loaded) throw new Error(`Already loaded!`);
-
-        // Prompt user for display name
-        const rl = readline.createInterface({ input, output });
-        let username: string = (await rl.question('enter name (or leave blank for guest): '))
-            .trim()
-            .toLowerCase() || 'guest';
-
-        rl.close();
-
-        this.username = username;
 
         // Get available models from server
         const res: Response = await fetch(new URL('/models', this.server));
@@ -55,11 +47,21 @@ export class ChatSession {
         }
 
         // Display info on available models and select the user's default model
-        console.log(`Server is online. ${modelInfo.models.length} models available.`);
+        this.output.write(`Server is online. ${modelInfo.models.length} models available.\n`);
         for (const model of modelInfo.models) {
-            console.log(` - ${model}`);
+            this.output.write(` - ${model}\n`);
         }
-        console.log('');
+        this.output.write('\n');
+
+        // Prompt user for display name
+        const rl = readline.createInterface({ input, output: this.output });
+        let username: string = (await rl.question('enter name (or leave blank for guest): '))
+            .trim()
+            .toLowerCase() || 'guest';
+
+        rl.close();
+
+        this.username = username;
 
         // TODO; switch to load from config (default model + system prompt)
         // - also TODO - load chat history here
@@ -86,20 +88,15 @@ You are a capable, thoughtful, and precise assistant. Your goal is to understand
         });
 
         // Greet user
-        console.log(
-            `hello, ${this.username}!
-🌳 welcome to ${chalk.magenta.bold('treehouse.repl')} 🌳
-type anything to chat with the default model (${chalk.cyan.bold(this.currentModel)})
-... or type ${chalk.yellow.italic('.help')} to see available commands!`
-        );
+        process.stdout.write(
+`${this.sessionPrompt()} hello, ${this.username}! welcome to ${chalk.magenta.bold('treehouse.repl')} 🌳
+you are currently chatting with the default model (${chalk.cyan.bold(this.currentModel)}) 🤖
+${chalk.italic(`... type ${chalk.yellow.italic('.help')} to see available commands!`)}\n`);
 
         this.loaded = true;
     }
 
-    async prompt(
-        output: NodeJS.WritableStream,
-        input: string
-    ) {
+    async prompt(input: string) {
         if (!this.loaded) throw new Error('Not loaded!');
 
         // Push input to chat history
@@ -128,7 +125,7 @@ type anything to chat with the default model (${chalk.cyan.bold(this.currentMode
         let final: iface.ChatDone | null = null;
 
         // Start with model prompt (e.g. "(gpt4.0) > ")
-        output.write(this.modelPrompt());
+        this.output.write(this.modelPrompt());
 
         // Read from stream, parsing response as newline-delimited chunks
         while (true) {
@@ -150,7 +147,7 @@ type anything to chat with the default model (${chalk.cyan.bold(this.currentMode
 
                 switch (evt.type) {
                     case 'delta':
-                        output.write(evt.content);
+                        this.output.write(evt.content);
                         break;
                     case 'done':
                         final = evt as iface.ChatDone;
@@ -166,14 +163,14 @@ type anything to chat with the default model (${chalk.cyan.bold(this.currentMode
         // Push LLM message to chat history and output total time taken
         this.messages.push({ role: Role.LLM, content: final.fullResponse });
         const seconds: number = Number(final.totalDuration) / 1e9;
-        output.write(`\n${chalk.italic.dim(`(... done in ${seconds.toFixed(3)} sec)`)}`);
+        this.output.write(`\n${chalk.italic.dim(`(... done in ${seconds.toFixed(3)} sec)`)}`);
     }
 
     /**
      * GET:
      */
 
-    async listModels(input: string) {
+    async listModels() {
         if (!this.loaded) throw new Error('Not loaded!');
 
         const res: Response = await fetch(new URL('/models', this.server));
@@ -181,12 +178,12 @@ type anything to chat with the default model (${chalk.cyan.bold(this.currentMode
 
         let modelInfo = (await res.json()) as iface.ModelsResponse;
 
-        console.log(`${modelInfo.models.length} models available:`)
+        this.output.write(`${this.sessionPrompt()} ${modelInfo.models.length} models available:\n`);
         for (const model of modelInfo.models) {
-            console.log(` - ${model}`);
+            this.output.write(` - ${model}\n`);
         }
 
-        console.log(`\nYou are using: ${chalk.cyan.bold(this.currentModel)}`);
+        this.output.write(`\nYou are using: ${chalk.cyan.bold(this.currentModel)}\n`);
     }
 
     /**
@@ -211,5 +208,12 @@ type anything to chat with the default model (${chalk.cyan.bold(this.currentMode
         if (!this.loaded) throw new Error('Not loaded!');
 
         return chalk.cyan.bold(`(${this.currentModel}) > `);
+    }
+
+    /**
+     * @returns the string displayed when the system displays info for the user
+     */
+    sessionPrompt(): string {
+        return chalk.red.bold(`(system) >`);
     }
 }

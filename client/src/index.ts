@@ -7,7 +7,7 @@ import { ChatSession } from './chatSession.js';
 
 const SERVER: string = "http://oak.lan:8000";
 
-const chat = new ChatSession(SERVER);
+const chat = new ChatSession(SERVER, process.stdout);
 await chat.load();
 
 const program: repl.REPLServer = repl.start({
@@ -15,10 +15,10 @@ const program: repl.REPLServer = repl.start({
     terminal: true,
     prompt: chat.userPrompt(),
     input: process.stdin,
-    output: process.stdout,
+    output: chat.output,
     async eval(input: string, context: Context, file: string, cb: (err: Error | null, result?: any) => void) {
         try {
-            await chat.prompt(this.output, input);
+            await chat.prompt(input);
             // Finish with a newline and redraw the user prompt
             this.output.write('\n');
             this.displayPrompt();
@@ -32,31 +32,16 @@ const program: repl.REPLServer = repl.start({
     },
 });
 
-
-
 // Remove unneeded commands
 const cmds = (program as any).commands as Record<string, REPLCommand>;
-['break', 'clear', 'load', 'save'].forEach(k => {
+['break', 'clear', 'load', 'save', 'editor'].forEach(k => {
     delete cmds[k];
 });
-
-// // Add commands with aliases
-// ['model', 'models'].forEach(k => {
-//     program.defineCommand()
-// });
-
-// program.defineCommand('editor', {
-//     help: 'test',
-//     action() {
-//         console.log('pingus')
-//         this.displayPrompt();
-//     }
-// });
 
 program.defineCommand('models', {
     help: `view and edit models`,
     async action(input: string) {
-        await chat.listModels(input);
+        await chat.listModels();
         this.displayPrompt();
     },
 });
@@ -66,6 +51,8 @@ program.defineCommand('models', {
 program.defineCommand('help', {
     help: 'print this help message',
     action: function() {
+        this.output.write(`${chat.sessionPrompt()} available commands:\n`);
+
         const color = chalk.yellow.italic;
 
         const names: string[] = Object.keys(program.commands).sort();
@@ -89,6 +76,6 @@ program.defineCommand('help', {
 });
 
 program.on('exit', () => {
-    console.log('Goodbye!');
+    chat.output.write(`${chat.sessionPrompt()} Goodbye!\n`);
     process.exit();
 });
