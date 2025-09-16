@@ -29,3 +29,14 @@ export type ChatEvent = ChatDelta | ChatDone | ChatError;
 export interface ModelsResponse {
     models: string[];
 }
+
+// /modelInfo
+export interface ModelInfoRequest {
+    modelName: string;
+}
+
+export interface ModelInfoResponse {
+    parameterSize: string;
+    quantizationLevel: string;
+    capabilities: string[];
+}

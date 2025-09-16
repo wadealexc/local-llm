@@ -204,6 +204,26 @@ ${chalk.italic(`... type ${chalk.yellow.italic('.help')} to see available comman
         this.output.write(`\nYou are using: ${chalk.cyan.bold(this.currentModel)}\n`);
     }
 
+    async getModelInfo(modelName: string) {
+        if (!this.loaded) throw new Error('Not loaded!');
+
+        const req: iface.ModelInfoRequest = { modelName: modelName };
+        const res: Response = await fetch(new URL('/modelInfo', this.server), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(req),
+        });
+
+        if (!res.ok) throw new Error(`POST ${this.server}/modelInfo -> ${res.status} : ${res.statusText}`);
+
+        const modelInfo = (await res.json()) as iface.ModelInfoResponse;
+        this.output.write(this.sessionPrompt());
+        this.output.write(` model info for ${chalk.cyan.bold(modelName)}:\n`);
+        this.output.write(` - parameter size: ${modelInfo.parameterSize}\n`);
+        this.output.write(` - quantization level: ${modelInfo.quantizationLevel}\n`);
+        this.output.write(` - capabilities: ${modelInfo.capabilities}\n`);
+    }
+
     /**
      * Util:
      */

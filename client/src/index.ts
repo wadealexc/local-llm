@@ -37,7 +37,8 @@ program.configureHelp({
     }
 });
 
-const models = program.command('models')
+const models = program.command('model')
+    .alias('models')
     .description('view and configure models')
     .action(async () => {
         await chat.listModels();
@@ -47,7 +48,7 @@ models.configureHelp({
     styleTitle: () => '',
     styleCommandDescription: () => '',
     commandUsage: (cmd) => '',
-    subcommandTerm: (cmd) => chalk.yellow(`.models ${cmd.name()}`)
+    subcommandTerm: (cmd) => chalk.yellow(`.${models.name()} ${cmd.name()}`)
 });
 
 models.command('list')
@@ -61,6 +62,13 @@ models.command('use')
     .argument('<name>', 'model name')
     .action(async (name: string) => {
         await chat.useModel(name);
+    });
+
+models.command('info')
+    .description(`get info on a model's capabilities`)
+    .argument('<name>', 'model name')
+    .action(async (name: string) => {
+        await chat.getModelInfo(name);
     });
 
 const help = program.command('help')

@@ -34,6 +34,23 @@ app.get('/models', (req, res) => {
     res.send(response);
 });
 
+app.post('/modelInfo', async (req, res) => {
+    const modelName = (req.body as iface.ModelInfoRequest).modelName;
+    if (!models.has(modelName)) {
+        return res.status(400).send(`model ${modelName} not found`);
+    }
+
+    const info = await ollama.show({ model: modelName });
+
+    let response: iface.ModelInfoResponse = {
+        parameterSize: info.details.parameter_size,
+        quantizationLevel: info.details.quantization_level,
+        capabilities: info.capabilities,
+    };
+
+    res.send(response);
+});
+
 /**
  * 1. Basic chat:
  * 
