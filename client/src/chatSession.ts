@@ -89,7 +89,7 @@ You are a capable, thoughtful, and precise assistant. Your goal is to understand
 
         // Greet user
         process.stdout.write(
-`${this.sessionPrompt()} hello, ${this.username}! welcome to ${chalk.magenta.bold('treehouse.repl')} 🌳
+`${this.sessionPrompt()}hello, ${this.username}! welcome to ${chalk.magenta.bold('treehouse.repl')} 🌳
 you are currently chatting with the default model (${chalk.cyan.bold(this.currentModel)}) 🤖
 ${chalk.italic(`... type ${chalk.yellow.italic('.help')} to see available commands!`)}\n`);
 
@@ -163,7 +163,25 @@ ${chalk.italic(`... type ${chalk.yellow.italic('.help')} to see available comman
         // Push LLM message to chat history and output total time taken
         this.messages.push({ role: Role.LLM, content: final.fullResponse });
         const seconds: number = Number(final.totalDuration) / 1e9;
-        this.output.write(`\n${chalk.italic.dim(`(... done in ${seconds.toFixed(3)} sec)`)}`);
+        this.output.write(`\n${chalk.italic.dim(`(... done in ${seconds.toFixed(3)} sec)\n`)}`);
+    }
+
+    async useModel(modelName: string) {
+        if (!this.loaded) throw new Error('Not loaded!');
+
+        const res: Response = await fetch(new URL('/models', this.server));
+        if (!res.ok) throw new Error(`GET ${this.server}/models -> ${res.status} : ${res.statusText}`);
+
+        let modelInfo = (await res.json()) as iface.ModelsResponse;
+
+        if (!modelInfo.models.find(model => model === modelName)) {
+            throw new Error(`model ${modelName} not found`);
+        } else if (modelName === this.currentModel) {
+            throw new Error(`already using model ${modelName}`);
+        }
+
+        this.currentModel = modelName;
+        this.output.write(`${this.sessionPrompt()}you are now chatting with ${chalk.cyan.bold(this.currentModel)}\n`);
     }
 
     /**
@@ -178,7 +196,7 @@ ${chalk.italic(`... type ${chalk.yellow.italic('.help')} to see available comman
 
         let modelInfo = (await res.json()) as iface.ModelsResponse;
 
-        this.output.write(`${this.sessionPrompt()} ${modelInfo.models.length} models available:\n`);
+        this.output.write(`${this.sessionPrompt()}${modelInfo.models.length} models available:\n`);
         for (const model of modelInfo.models) {
             this.output.write(` - ${model}\n`);
         }
@@ -214,6 +232,6 @@ ${chalk.italic(`... type ${chalk.yellow.italic('.help')} to see available comman
      * @returns the string displayed when the system displays info for the user
      */
     sessionPrompt(): string {
-        return chalk.red.bold(`(system) >`);
+        return chalk.red.bold(`(system) > `);
     }
 }

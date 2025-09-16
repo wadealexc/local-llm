@@ -20,6 +20,9 @@ TODO:
     - "ctrl c" to stop ai yapping
     - "editor" mode to edit last message/regenerate
     - save/export chat history
+    - Better help screen: https://github.com/tj/commander.js/blob/master/docs/help-in-depth.md#help-in-depth
+        - Ideally we want to nest command definitions and .help output so i can do `.help models use`, etc
+        - Somehow remove blank space?
 - client-side config/session storage
     - database for config/chat history
     - better support for copy/paste in client

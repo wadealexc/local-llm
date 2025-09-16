@@ -11,6 +11,11 @@
     "watch": "tsc -b -w"
   },
   "devDependencies": {
+    "@types/string-argv": "^0.1.0",
     "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "commander": "^14.0.1",
+    "string-argv": "^0.3.2"
   }
 }
