@@ -108,7 +108,7 @@ app.post('/chat', async (req, res) => {
     } catch (err: any) {
         // If the client aborted, the loop/read will error: swallow quietly.
         const msg = String(err?.message ?? err);
-        console.log(`err: ${msg}`);
+        console.log(`\nerr: ${msg}`);
 
         const aborted = msg.toLowerCase().includes('aborted') || msg.includes('ERR_STREAM_PREMATURE_CLOSE');        
         if (!aborted && !res.writableEnded) {

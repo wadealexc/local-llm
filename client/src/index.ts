@@ -165,6 +165,9 @@ rl.on('SIGINT', () => {
 
 // Handle Ctrl+D: end the program
 rl.on('close', () => {
+    // Cancel chat stream, if active
+    chat.cancelStream();
+
     process.stdout.write(`\n${chat.sessionPrompt()}Goodbye!\n`);
     process.exit(0);
 });

@@ -17,7 +17,9 @@ Goal is to make `client` a Dockerfile and distribute a tiny shell script that pu
 TODO:
 - https://www.npmjs.com/package/boxen for pretty boxes!
 - features:
-    - "ctrl c" to stop ai yapping
+    - tab completion (readline.completer function)
+        - requires better command heirarchy for total cmd/subcmd support
+        - follow-up: 'dim text suggestion' using completion logic
     - "editor" mode to edit last message/regenerate
     - save/export chat history
     - Better help screen: https://github.com/tj/commander.js/blob/master/docs/help-in-depth.md#help-in-depth
@@ -29,7 +31,12 @@ TODO:
     - better greeter page (print the actual commands)
     - implement more commands!
 
-CLI vibe:
+### Mood Board
+
+Codex: https://github.com/openai/codex/tree/main/codex-cli 
+* https://github.com/vadimdemedes/ink for beautiful terminal UI?
+
+Caves of Qud vibe:
 ![alt text](image.png)
 
 ## TS
