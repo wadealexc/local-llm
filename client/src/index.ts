@@ -33,7 +33,7 @@ program.configureHelp({
         } else {
             return `${chalk.yellow(`.${cmd.name()}`)} `;
         }
-        
+
     }
 });
 
@@ -150,19 +150,20 @@ rl.on('line', async (rawLine) => {
     }
 });
 
-// Handle Ctrl+C / Ctrl+D
+// Handle Ctrl+C: clear the current line and redraw the user prompt
+// Note: Ctrl+C on an empty line does NOT kill the program
 rl.on('SIGINT', () => {
-    // emulate REPL behavior: first ^C clears line; second exits
-    if ((rl as any)._line && (rl as any)._line.length > 0) {
-        readline.clearLine(process.stdout, 0);
-        rl.write(null, { ctrl: true, name: 'u' } as any); // clear input
-        refreshPrompt();
-    } else {
-        process.stdout.write('\n');
-        rl.close();
-    }
+    // Cancel chat stream, if active
+    chat.cancelStream();
+
+    // Clear the current line and redraw the user prompt
+    rl.write(null, { ctrl: true, name: 'u' });
+    readline.clearLine(process.stdout, 0);
+    readline.cursorTo(process.stdout, 0);
+    refreshPrompt();
 });
 
+// Handle Ctrl+D: end the program
 rl.on('close', () => {
     process.stdout.write(`\n${chat.sessionPrompt()}Goodbye!\n`);
     process.exit(0);

@@ -15,6 +15,7 @@ enum Role {
 export class ChatSession {
 
     private loaded: boolean = false;
+    private streamController: AbortController | null = null;
     public output: NodeJS.WritableStream;
 
     public server: string;
@@ -28,6 +29,19 @@ export class ChatSession {
     constructor(server: string, output: NodeJS.WritableStream) {
         this.server = server;
         this.output = output;
+    }
+
+    /**
+     * If we have an active stream, cancel it and return true
+     * @returns true if a stream was cancelled
+     */
+    cancelStream(): boolean {
+        if (!this.streamController) {
+            return false;
+        }
+
+        this.streamController.abort();
+        return true;
     }
 
     /**
@@ -89,7 +103,7 @@ You are a capable, thoughtful, and precise assistant. Your goal is to understand
 
         // Greet user
         process.stdout.write(
-`${this.sessionPrompt()}hello, ${this.username}! welcome to ${chalk.magenta.bold('treehouse.repl')} 🌳
+            `${this.sessionPrompt()}hello, ${this.username}! welcome to ${chalk.magenta.bold('treehouse.repl')} 🌳
 you are currently chatting with the default model (${chalk.cyan.bold(this.currentModel)}) 🤖
 ${chalk.italic(`... type ${chalk.yellow.italic('.help')} to see available commands!`)}\n`);
 
@@ -99,71 +113,90 @@ ${chalk.italic(`... type ${chalk.yellow.italic('.help')} to see available comman
     async prompt(input: string) {
         if (!this.loaded) throw new Error('Not loaded!');
 
+        // Remember initial message history length in case we need to reset due to abort
+        const initialLength = this.messages.length;
+
         // Push input to chat history
         this.messages.push({ role: Role.User, content: input });
+        this.streamController = new AbortController();
 
-        // Send chat to server
-        // TODO - fetch accepts an "AbortController" signal; can use this to kill a response we don't want
         const req: iface.ChatRequest = {
             username: this.username,
             modelName: this.currentModel,
             messages: this.messages
         };
-        const res: Response = await fetch(new URL('/chat', this.server), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(req),
-        });
 
-        if (!res.ok) throw new Error(`POST ${this.server}/chat -> ${res.status}: ${res.statusText}`);
-        if (!res.body) throw new Error(`POST ${this.server}/chat -> Got ${res.status} but no response body!`);
+        try {
+            // Send chat to server
+            const res: Response = await fetch(new URL('/chat', this.server), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(req),
+                signal: this.streamController.signal,
+            });
 
-        // Get ready to stream response
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buf = '';
-        let final: iface.ChatDone | null = null;
+            if (!res.ok) throw new Error(`POST ${this.server}/chat -> ${res.status}: ${res.statusText}`);
+            if (!res.body) throw new Error(`POST ${this.server}/chat -> Got ${res.status} but no response body!`);
 
-        // Start with model prompt (e.g. "(gpt4.0) > ")
-        this.output.write(this.modelPrompt());
+            // Get ready to stream response
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buf = '';
+            let final: iface.ChatDone | null = null;
 
-        // Read from stream, parsing response as newline-delimited chunks
-        while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
+            // Start with model prompt (e.g. "(gpt4.0) > ")
+            this.output.write(this.modelPrompt());
 
-            buf += decoder.decode(value, { stream: true });
-
+            // Read from stream, parsing response as newline-delimited chunks
             while (true) {
-                // Only process complete lines
-                const nl = buf.indexOf('\n');
-                if (nl === -1) break;
+                const { value, done } = await reader.read();
+                if (done) break;
 
-                const line = buf.slice(0, nl);
-                buf = buf.slice(nl + 1);
-                if (!line.trim()) continue;
+                buf += decoder.decode(value, { stream: true });
 
-                const evt = JSON.parse(line) as iface.ChatEvent;
+                while (true) {
+                    // Only process complete lines
+                    const nl = buf.indexOf('\n');
+                    if (nl === -1) break;
 
-                switch (evt.type) {
-                    case 'delta':
-                        this.output.write(evt.content);
-                        break;
-                    case 'done':
-                        final = evt as iface.ChatDone;
-                        break;
-                    case 'error':
-                        throw new Error(evt.message);
+                    const line = buf.slice(0, nl);
+                    buf = buf.slice(nl + 1);
+                    if (!line.trim()) continue;
+
+                    const evt = JSON.parse(line) as iface.ChatEvent;
+
+                    switch (evt.type) {
+                        case 'delta':
+                            this.output.write(evt.content);
+                            break;
+                        case 'done':
+                            final = evt as iface.ChatDone;
+                            break;
+                        case 'error':
+                            throw new Error(evt.message);
+                    }
                 }
             }
+
+            if (!final) throw new Error('stream ended without final payload');
+
+            // Push LLM message to chat history and output total time taken
+            this.messages.push({ role: Role.LLM, content: final.fullResponse });
+            const seconds: number = Number(final.totalDuration) / 1e9;
+            this.output.write(`\n${chalk.italic.dim(`(... done in ${seconds.toFixed(3)} sec)\n`)}`);
+        } catch (err: any) {
+            // Reset chat history
+            this.messages.length = initialLength;
+
+            if (err?.name === 'AbortError' || String(err?.message).toLowerCase().includes('aborted')) {
+                this.output.write(chalk.dim.italic('\n(^C) canceled\n'));
+                return;
+            } else {
+                throw err;
+            }
+        } finally {
+            this.streamController = null;
         }
-
-        if (!final) throw new Error('stream ended without final payload');
-
-        // Push LLM message to chat history and output total time taken
-        this.messages.push({ role: Role.LLM, content: final.fullResponse });
-        const seconds: number = Number(final.totalDuration) / 1e9;
-        this.output.write(`\n${chalk.italic.dim(`(... done in ${seconds.toFixed(3)} sec)\n`)}`);
     }
 
     async useModel(modelName: string) {
