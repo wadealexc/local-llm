@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useReducer } from 'react';
 import { Box, Text, Newline, Spacer, Static, useStdout, useInput, useApp } from 'ink';
-import { TextInput } from '@inkjs/ui';
+import TextInput from 'ink-text-input';
+import chalk from 'chalk';
 
 import { ChatSession } from './chatSession.js';
 import { useChatSession } from './useChatSession.js';
@@ -33,6 +34,7 @@ export default function App({ chat }: Props): React.ReactElement {
 	const { status, modelInfo, history, shutdown } = useChatSession(chat);
 	const dimensions = useStdoutDimensions();
 	const [ currentInput, setCurrentInput ] = useState('');
+	const [ userInput, setUserInput ] = useState('');
 	const [ counter, setCounter ] = useState(0);
 
 	useInput((input, key) => {
@@ -48,22 +50,24 @@ export default function App({ chat }: Props): React.ReactElement {
 			exit();
 		}
 
-		// append test message
-		if (key.downArrow) {
-			if (counter % 2 === 0) {
-				chat.pushMessage({
-					role: Role.User,
-					content: `bingus${counter}`
-				});
-			} else {
-				chat.pushMessage({
-					role: Role.LLM,
-					content: `bingus${counter}`
-				});
-			}
-			setCounter(prev => prev + 1);			
-		}
+		// // append test message
+		// if (key.downArrow) {
+		// 	if (counter % 2 === 0) {
+		// 		chat.pushMessage({
+		// 			role: Role.User,
+		// 			content: `bingus${counter}`
+		// 		});
+		// 	} else {
+		// 		chat.pushMessage({
+		// 			role: Role.LLM,
+		// 			content: `bingus${counter}`
+		// 		});
+		// 	}
+		// 	setCounter(prev => prev + 1);			
+		// }
 	});
+
+
 
 	return (
 		<Box flexDirection="column" height={dimensions.rows} width={dimensions.columns}>
@@ -102,12 +106,27 @@ export default function App({ chat }: Props): React.ReactElement {
 
 			{/* Footer - will contain user input/stream output field (and hint text zone) */}
 			<Box borderStyle="round" flexShrink={0} paddingX={1}>
-				<Text>Type to chat with {modelInfo?.modelName}</Text>
+				<Text>{chalk.green(`(${chat.username}) >  `)}</Text>
+				<TextInput
+					value={userInput}
+					placeholder={`say something moron`}
+					onChange={setUserInput}
+					onSubmit={(entered) => {
+						setUserInput('');
+						chat.prompt(entered);
+					}}
+				/>
+				{/* <Text>Type to chat with {modelInfo?.modelName}</Text> */}
 			</Box>
 			<Box flexShrink={0} paddingX={1}>
 				<Text italic={true} dimColor color="grey">press up arrow to exit; press down arrow to push a message</Text>
 			</Box>
-			
+			{/* <Box borderStyle="round" flexShrink={0} paddingX={1}>
+				<Text>Type to chat with {modelInfo?.modelName}</Text>
+			</Box>
+			<Box flexShrink={0} paddingX={1}>
+				<Text italic={true} dimColor color="grey">press up arrow to exit; press down arrow to push a message</Text>
+			</Box> */}
 		</Box>
 	);
 }

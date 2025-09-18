@@ -178,4 +178,25 @@ You are a capable, thoughtful, and precise assistant. Your goal is to understand
         });
         this.emit('message:push', m);
     }
+
+    // TODO:
+    // 1. make pushMessage private
+    // 2. prevent double-user msg
+    prompt(input: string) {
+        const m: ChatMsg = {
+            id: `${this.messages.length}`,
+            role: Role.User,
+            content: input,
+        };
+        this.messages.push(m);
+        this.emit('message:push', m);
+
+        const m2: ChatMsg = {
+            id: `${this.messages.length}`,
+            role: Role.LLM,
+            content: `idiot said: ${input}`,
+        };
+        this.messages.push(m2);
+        this.emit('message:push', m2);
+    }
 }

@@ -16,7 +16,7 @@ export default function Message({
     userName,
 }: Props): React.ReactElement {
     if (m.role === Role.System) {
-        return <Text>{chalk.red(`(sys) >  `)}{m.content}</Text>;
+        return <Text>{chalk.red(`(system prompt) >  \n`)}{m.content}</Text>;
     } else if (m.role === Role.LLM) {
         return <Text>{chalk.cyan(`(${modelName}) >  `)}{m.content}</Text>;
     } else {
