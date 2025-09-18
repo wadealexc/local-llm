@@ -1,13 +1,13 @@
 import React, { useState, useRef, useEffect, useReducer } from 'react';
-import { Box, Text, useStdout, useInput, useApp } from 'ink';
+import { Box, Text, Newline, Spacer, Static, useStdout, useInput, useApp } from 'ink';
 import { TextInput } from '@inkjs/ui';
-
-import { type Message } from 'ollama';
 
 import { ChatSession } from './chatSession.js';
 import { useChatSession } from './useChatSession.js';
+import { useStdoutDimensions } from './useStdoutDimensions.js';
 import Status from './components/status.js';
 import ModelInfo from './components/modelInfo.js';
+import Message from './components/message.js';
 
 enum Role {
     User = "user",
@@ -30,10 +30,13 @@ const APP_VERSION = 'v0.0.1';
 
 export default function App({ chat }: Props): React.ReactElement {
 	const { exit } = useApp();
-	const { status, shutdown } = useChatSession(chat);
+	const { status, modelInfo, history, shutdown } = useChatSession(chat);
+	const dimensions = useStdoutDimensions();
+	const [ currentInput, setCurrentInput ] = useState('');
+	const [ counter, setCounter ] = useState(0);
 
 	useInput((input, key) => {
-		console.log(`input: ${input}`);
+		setCurrentInput(input);
 
 		if (key.ctrl && input.toLowerCase() === 'c') {
 			shutdown();
@@ -44,19 +47,36 @@ export default function App({ chat }: Props): React.ReactElement {
 			shutdown();
 			exit();
 		}
+
+		// append test message
+		if (key.downArrow) {
+			if (counter % 2 === 0) {
+				chat.pushMessage({
+					role: Role.User,
+					content: `bingus${counter}`
+				});
+			} else {
+				chat.pushMessage({
+					role: Role.LLM,
+					content: `bingus${counter}`
+				});
+			}
+			setCounter(prev => prev + 1);			
+		}
 	});
 
-	useEffect(() => {
-		setTimeout(() => {
-			console.log('auto shutdown');
-			shutdown();
-			exit();
-		}, 10000);
-	}, []);
-
 	return (
-		<Box flexDirection="column">
-			<Box flexDirection="row">
+		<Box flexDirection="column" height={dimensions.rows} width={dimensions.columns}>
+			<Box flexDirection="column" flexShrink={0}>
+				<Text>
+					<Text>Input at the top: {currentInput}(!)</Text>
+					<Newline />
+					<Text>width: {dimensions.columns}</Text>
+					<Newline />
+					<Text>height: {dimensions.rows}</Text>
+				</Text>
+			</Box>
+			<Box flexDirection="row" flexShrink={0}>
 				{/* app+server status box */}
 				<Status 
 					appName={APP_NAME}
@@ -65,21 +85,33 @@ export default function App({ chat }: Props): React.ReactElement {
 					serverStatus={status}
 				/>
 				{/* model info box */}
-				<ModelInfo
-					modelName='gpt-oss'
-					params='8b'
-					quantization='yeah sure'
-				/>
+				<ModelInfo modelInfo={modelInfo}/>
 			</Box>
-			{/* <Box borderStyle="round" paddingX={1} width={64}>
-				<Text>
-					{ status ===  }
-					<Text color="green">●</Text><Text bold>  treehouse llm </Text>
-					<Text dimColor color="blueBright">v0.0.1</Text>
-					<Text>{"\nlastInput:"}{lastInput}</Text>
-					<Text>{"\ncurInput:"}{curInput}</Text>
-				</Text>
-			</Box> */}
+
+			{/* Message history */}
+			<Box 
+				flexDirection="column" 
+				flexGrow={1} 
+				flexShrink={1} 
+				justifyContent="flex-end"
+			>
+				{ history.map((m, idx) => {
+					return (
+						<Message
+							key={m.id}
+							m={m}
+							modelName={modelInfo?.modelName}
+							userName={chat.username}
+						/>
+					);
+				})}
+			</Box>
+
+			{/* Footer - will contain user input/stream output field (and hint text zone) */}
+			<Box flexDirection="column" flexShrink={0} marginTop={1}>
+				<Text>Hello from the bottom!</Text>
+				<Text italic={true} dimColor color="grey">press up arrow to exit</Text>
+			</Box>
 		</Box>
 	);
 }

@@ -1,6 +1,7 @@
 import React from 'react';
-import { type ServerStatus } from '../common.js';
 import { Box, Text, Newline } from 'ink';
+
+import { type ServerStatus } from '../common.js';
 
 type Props = {
     appName: string,
