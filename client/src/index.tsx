@@ -1,4 +1,4 @@
-import readline from 'node:readline';
+import * as readline from 'node:readline/promises';
 
 import { Command, type CommanderError } from 'commander';
 import chalk from 'chalk';
@@ -10,10 +10,21 @@ import { ChatSession } from './chatSession.js';
 
 const SERVER: string = "http://oak.lan:8000";
 
-// const chat = new ChatSession(SERVER, process.stdout);
+// Prompt user for display name
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+let username: string = (await rl.question('Enter name (or leave blank for guest): '))
+    .trim()
+    .toLowerCase() || 'guest';
+
+rl.close();
+
+const chat = new ChatSession(SERVER, username);
+chat.startSession();
 // await chat.load();
 
-render(<App/>);
+
+
+render(<App chat={chat} />);
 
 // const program = new Command()
 //     .name('')

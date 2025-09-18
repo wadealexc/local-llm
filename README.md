@@ -36,6 +36,12 @@ TODO:
 Codex: https://github.com/openai/codex/tree/main/codex-cli 
 * https://github.com/vadimdemedes/ink for beautiful terminal UI?
 
+Commander UI:
+![alt text](commander.png)
+
+Codex UI:
+![alt text](codex.png)
+
 Caves of Qud vibe:
 ![alt text](image.png)
 

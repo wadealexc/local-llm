@@ -1,290 +1,98 @@
+import { EventEmitter } from 'events';
 import * as readline from 'node:readline/promises';
 import { stdin as input } from 'node:process';
-import { type Message } from 'ollama';
 
+import { type Message } from 'ollama';
 import chalk from 'chalk';
 
 import * as iface from '@local-llm/protocol';
 
-enum Role {
-    User = "user",
-    LLM = "assistant",
-    System = "system",
-}
+import { type Role, type ServerStatus } from './common.js';
 
-export class ChatSession {
 
-    private loaded: boolean = false;
-    private streamController: AbortController | null = null;
-    public output: NodeJS.WritableStream;
+export class ChatSession extends EventEmitter {
+    
+    // Session/Stream control
+    private sessionActive: boolean = false;
+    private streamCtrl: AbortController | null = null;
 
     public server: string;
-    public username: string = 'guest';
+    public serverStatus: ServerStatus = 'not loaded';
+    private pingInterval: NodeJS.Timeout | undefined;
 
-    public currentModel: string = '';
-    public systemPrompt: string = '';
+    public username: string;
 
-    private messages: Message[] = [];
+    // public currentModel: string = '';
+    // public systemPrompt: string = '';
 
-    constructor(server: string, output: NodeJS.WritableStream) {
+    // private messages: Message[] = [];
+
+    constructor(server: string, username: string) {
+        super();
+
         this.server = server;
-        this.output = output;
-    }
-
-    /**
-     * If we have an active stream, cancel it and return true
-     * @returns true if a stream was cancelled
-     */
-    cancelStream(): boolean {
-        if (!this.streamController) {
-            return false;
-        }
-
-        this.streamController.abort();
-        return true;
-    }
-
-    /**
-     * POST:
-     */
-
-    async load() {
-        if (this.loaded) throw new Error(`Already loaded!`);
-
-        // Get available models from server
-        const res: Response = await fetch(new URL('/models', this.server));
-        if (!res.ok) throw new Error(`GET ${this.server}/models -> ${res.status} : ${res.statusText}`);
-
-        let modelInfo = (await res.json()) as iface.ModelsResponse;
-        if (modelInfo.models.length === 0) {
-            throw new Error('No models available');
-        }
-
-        // Display info on available models and select the user's default model
-        this.output.write(`Server is online. ${modelInfo.models.length} models available.\n`);
-        for (const model of modelInfo.models) {
-            this.output.write(` - ${model}\n`);
-        }
-        this.output.write('\n');
-
-        // Prompt user for display name
-        const rl = readline.createInterface({ input, output: this.output });
-        let username: string = (await rl.question('enter name (or leave blank for guest): '))
-            .trim()
-            .toLowerCase() || 'guest';
-
-        rl.close();
-
         this.username = username;
-
-        // TODO; switch to load from config (default model + system prompt)
-        // - also TODO - load chat history here
-        let preferredDefaultModel: string = 'qwen3:4b'
-        this.currentModel =
-            modelInfo.models.find(model => model === preferredDefaultModel)
-            ?? modelInfo.models[0]
-            ?? (() => { throw new Error('(unreachable) No models available.'); })();
-
-        // Create system prompt    
-        let dateString = (new Date())
-            .toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-        this.systemPrompt =
-            `You are a self-hosted language model running on ${this.server}.
-Current date: ${dateString}
-
-Personality:
-You are a capable, thoughtful, and precise assistant. Your goal is to understand the user's intent, ask clarifying questions when needed, think step-by-step through problems, provide clear and accurate answers, and proactively anticipate helpful follow-up information. Always prioritize being truthful, nuanced, insightful, and efficient, tailoring your responses specifically to the user's needs and preferences.`;
-
-        // Insert system prompt into message history
-        this.messages.push({
-            role: Role.System,
-            content: this.systemPrompt
-        });
-
-        // Greet user
-        process.stdout.write(
-            `${this.sessionPrompt()}hello, ${this.username}! welcome to ${chalk.magenta.bold('treehouse.repl')} 🌳
-you are currently chatting with the default model (${chalk.cyan.bold(this.currentModel)}) 🤖
-${chalk.italic(`... type ${chalk.yellow.italic('.help')} to see available commands!`)}\n`);
-
-        this.loaded = true;
     }
 
-    async prompt(input: string) {
-        if (!this.loaded) throw new Error('Not loaded!');
+    // Shutdown any ongoing connections with the server and close out any streams.
+    // Used when stopping the app. No-op if we don't have an active session
+    stopSession() {
+        process.stderr.write('stopSession called\n');
+        
+        if (this.sessionActive === false) return;
+        this.sessionActive = false;
 
-        // Remember initial message history length in case we need to reset due to abort
-        const initialLength = this.messages.length;
+        clearInterval(this.pingInterval);
+        this.stopStream();
 
-        // Push input to chat history
-        this.messages.push({ role: Role.User, content: input });
-        this.streamController = new AbortController();
+        this.emit('shutdown');
+    }
 
-        const req: iface.ChatRequest = {
-            username: this.username,
-            modelName: this.currentModel,
-            messages: this.messages
-        };
+    // Close out current stream, if one is active
+    // Used to abort a chat stream without shutting down the app
+    stopStream() {
+        if (this.streamCtrl) {
+            this.streamCtrl.abort();
+            // this.emit('') emit here?
+        }
+    }
+
+    // Connect to server and fetch models
+    async startSession() {
+        // Don't start a session if we have an active one
+        if (this.sessionActive) throw new Error('tried to start two concurrent sessions!');
+        this.sessionActive = true;
+
+        // ping server every second
+        this.pingInterval = setInterval(async () => {
+            try {
+                const res = await fetch(new URL('/ping', this.server));
+                if (res.ok) {
+                    this.setStatus('online');
+                } else {
+                    this.setStatus('errors');
+                }
+            } catch (err: any) {
+                this.setStatus('offline');
+            }
+        }, 1000);
 
         try {
-            // Send chat to server
-            const res: Response = await fetch(new URL('/chat', this.server), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(req),
-                signal: this.streamController.signal,
-            });
+            // Get available models from server
+            const res: Response = await fetch(new URL('/models', this.server));
+            if (!res.ok) throw new Error(`GET ${this.server}/models -> ${res.status} : ${res.statusText}`);
 
-            if (!res.ok) throw new Error(`POST ${this.server}/chat -> ${res.status}: ${res.statusText}`);
-            if (!res.body) throw new Error(`POST ${this.server}/chat -> Got ${res.status} but no response body!`);
 
-            // Get ready to stream response
-            const reader = res.body.getReader();
-            const decoder = new TextDecoder();
-            let buf = '';
-            let final: iface.ChatDone | null = null;
-
-            // Start with model prompt (e.g. "(gpt4.0) > ")
-            this.output.write(this.modelPrompt());
-
-            // Read from stream, parsing response as newline-delimited chunks
-            while (true) {
-                const { value, done } = await reader.read();
-                if (done) break;
-
-                buf += decoder.decode(value, { stream: true });
-
-                while (true) {
-                    // Only process complete lines
-                    const nl = buf.indexOf('\n');
-                    if (nl === -1) break;
-
-                    const line = buf.slice(0, nl);
-                    buf = buf.slice(nl + 1);
-                    if (!line.trim()) continue;
-
-                    const evt = JSON.parse(line) as iface.ChatEvent;
-
-                    switch (evt.type) {
-                        case 'delta':
-                            this.output.write(evt.content);
-                            break;
-                        case 'done':
-                            final = evt as iface.ChatDone;
-                            break;
-                        case 'error':
-                            throw new Error(evt.message);
-                    }
-                }
-            }
-
-            if (!final) throw new Error('stream ended without final payload');
-
-            // Push LLM message to chat history and output total time taken
-            this.messages.push({ role: Role.LLM, content: final.fullResponse });
-            const seconds: number = Number(final.totalDuration) / 1e9;
-            this.output.write(`\n${chalk.italic.dim(`(... done in ${seconds.toFixed(3)} sec)\n`)}`);
         } catch (err: any) {
-            // Reset chat history
-            this.messages.length = initialLength;
-
-            if (err?.name === 'AbortError' || String(err?.message).toLowerCase().includes('aborted')) {
-                this.output.write(chalk.dim.italic('\n(^C) canceled\n'));
-                return;
-            } else {
-                throw err;
-            }
-        } finally {
-            this.streamController = null;
+            return;
         }
     }
 
-    async useModel(modelName: string) {
-        if (!this.loaded) throw new Error('Not loaded!');
-
-        const res: Response = await fetch(new URL('/models', this.server));
-        if (!res.ok) throw new Error(`GET ${this.server}/models -> ${res.status} : ${res.statusText}`);
-
-        let modelInfo = (await res.json()) as iface.ModelsResponse;
-
-        if (!modelInfo.models.find(model => model === modelName)) {
-            throw new Error(`model ${modelName} not found`);
-        } else if (modelName === this.currentModel) {
-            throw new Error(`already using model ${modelName}`);
+    // Set this.serverStatus, emitting an event if the new value is different
+    setStatus(status: ServerStatus) {
+        if (status !== this.serverStatus) {
+            this.serverStatus = status;
+            this.emit('server:status', status);
         }
-
-        this.currentModel = modelName;
-        this.output.write(`${this.sessionPrompt()}you are now chatting with ${chalk.cyan.bold(this.currentModel)}\n`);
-    }
-
-    /**
-     * GET:
-     */
-
-    async listModels() {
-        if (!this.loaded) throw new Error('Not loaded!');
-
-        const res: Response = await fetch(new URL('/models', this.server));
-        if (!res.ok) throw new Error(`GET ${this.server}/models -> ${res.status} : ${res.statusText}`);
-
-        let modelInfo = (await res.json()) as iface.ModelsResponse;
-
-        this.output.write(`${this.sessionPrompt()}${modelInfo.models.length} models available:\n`);
-        for (const model of modelInfo.models) {
-            this.output.write(` - ${model}\n`);
-        }
-
-        this.output.write(`\nYou are using: ${chalk.cyan.bold(this.currentModel)}\n`);
-    }
-
-    async getModelInfo(modelName: string) {
-        if (!this.loaded) throw new Error('Not loaded!');
-
-        const req: iface.ModelInfoRequest = { modelName: modelName };
-        const res: Response = await fetch(new URL('/modelInfo', this.server), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(req),
-        });
-
-        if (!res.ok) throw new Error(`POST ${this.server}/modelInfo -> ${res.status} : ${res.statusText}`);
-
-        const modelInfo = (await res.json()) as iface.ModelInfoResponse;
-        this.output.write(this.sessionPrompt());
-        this.output.write(` model info for ${chalk.cyan.bold(modelName)}:\n`);
-        this.output.write(` - parameter size: ${modelInfo.parameterSize}\n`);
-        this.output.write(` - quantization level: ${modelInfo.quantizationLevel}\n`);
-        this.output.write(` - capabilities: ${modelInfo.capabilities}\n`);
-    }
-
-    /**
-     * Util:
-     */
-
-    /**
-     * @returns the string displayed for the user prompt (e.g. "(fox) > ")
-     */
-    userPrompt(): string {
-        if (this.loaded) {
-            return chalk.green.bold(`(${this.username}) > `);
-        } else {
-            return chalk.green.bold(`(you) > `);
-        }
-    }
-
-    /**
-     * @returns the string displayed for the current llm (e.g. "(gpt4.0) > ")
-     */
-    modelPrompt(): string {
-        if (!this.loaded) throw new Error('Not loaded!');
-
-        return chalk.cyan.bold(`(${this.currentModel}) > `);
-    }
-
-    /**
-     * @returns the string displayed when the system displays info for the user
-     */
-    sessionPrompt(): string {
-        return chalk.red.bold(`(system) > `);
     }
 }

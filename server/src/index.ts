@@ -24,6 +24,10 @@ for (const model of rawModels) {
     console.log(` - ${model.name} (${info.capabilities})`);
 }
 
+app.get('/ping', (req, res) => {
+    res.send('pong');
+});
+
 app.get('/models', (req, res) => {
     let response: iface.ModelsResponse = { models: [] }
 
