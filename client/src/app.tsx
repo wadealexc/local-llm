@@ -67,16 +67,7 @@ export default function App({ chat }: Props): React.ReactElement {
 
 	return (
 		<Box flexDirection="column" height={dimensions.rows} width={dimensions.columns}>
-			<Box flexDirection="column" flexShrink={0}>
-				<Text>
-					<Text>Input at the top: {currentInput}(!)</Text>
-					<Newline />
-					<Text>width: {dimensions.columns}</Text>
-					<Newline />
-					<Text>height: {dimensions.rows}</Text>
-				</Text>
-			</Box>
-			<Box flexDirection="row" flexShrink={0}>
+			<Box flexDirection="row" flexShrink={0} paddingTop={1}>
 				{/* app+server status box */}
 				<Status 
 					appName={APP_NAME}
@@ -94,24 +85,29 @@ export default function App({ chat }: Props): React.ReactElement {
 				flexGrow={1} 
 				flexShrink={1} 
 				justifyContent="flex-end"
+				overflow="hidden"
 			>
 				{ history.map((m, idx) => {
 					return (
-						<Message
-							key={m.id}
-							m={m}
-							modelName={modelInfo?.modelName}
-							userName={chat.username}
-						/>
+						<Box key={m.id} borderStyle="round" flexShrink={0} paddingX={1}>
+							<Message
+								m={m}
+								modelName={modelInfo?.modelName}
+								userName={chat.username}
+							/>
+						</Box>
 					);
 				})}
-			</Box>
+			</Box>			
 
 			{/* Footer - will contain user input/stream output field (and hint text zone) */}
-			<Box flexDirection="column" flexShrink={0} marginTop={1}>
-				<Text>Hello from the bottom!</Text>
-				<Text italic={true} dimColor color="grey">press up arrow to exit</Text>
+			<Box borderStyle="round" flexShrink={0} paddingX={1}>
+				<Text>Type to chat with {modelInfo?.modelName}</Text>
 			</Box>
+			<Box flexShrink={0} paddingX={1}>
+				<Text italic={true} dimColor color="grey">press up arrow to exit; press down arrow to push a message</Text>
+			</Box>
+			
 		</Box>
 	);
 }

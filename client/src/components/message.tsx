@@ -1,5 +1,6 @@
 import React from 'react';
 import { Box, Text, Newline } from 'ink';
+import chalk from 'chalk';
 
 import { Role, type ChatMsg } from '../common.js';
 
@@ -14,18 +15,11 @@ export default function Message({
     modelName,
     userName,
 }: Props): React.ReactElement {
-    let promptText: React.ReactElement;
     if (m.role === Role.System) {
-        promptText = <Text color="red">{`(sys) >  `}</Text>;
+        return <Text>{chalk.red(`(sys) >  `)}{m.content}</Text>;
     } else if (m.role === Role.LLM) {
-        promptText = <Text color="cyan">{`(${modelName}) >  `}</Text>;
+        return <Text>{chalk.cyan(`(${modelName}) >  `)}{m.content}</Text>;
     } else {
-        promptText = <Text color="green">{`(${userName}) >  `}</Text>;
+        return <Text>{chalk.green(`(${userName}) >  `)}{m.content}</Text>;
     }
-
-    return (
-        <Box borderStyle="round" paddingX={1}>
-            <Text>{promptText}{m.content}</Text>
-        </Box>
-    );
 }
