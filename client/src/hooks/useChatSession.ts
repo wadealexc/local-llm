@@ -45,18 +45,7 @@ export function useChatSession(chat: ChatSession): {
         hist: [],
         trim: 0
     });
-    useEmitter(chat, 'message:push', (m: ChatMsg) => setHistory(
-        prev => ({
-            hist: [...prev.hist, m],
-            trim: 0
-        })
-    ));
-    useEmitter(chat, 'message:pop', () => setHistory(
-        prev => ({
-            hist: prev.hist.slice(0, -1),
-            trim: 0
-        })
-    ));
+    useEmitter(chat, 'message:set', (hist: ChatMsg[]) => setHistory({ hist: hist, trim: 0 }));
 
     /**
      * Mode and chat stream output:
@@ -84,7 +73,7 @@ export function useChatSession(chat: ChatSession): {
     const stopStream = useCallback(() => {
         chat.stopStream();
     }, [chat]);
-    
+
     const shutdown = useCallback(() => {
         process.stderr.write('shutdown called\n');
         chat.stopSession();

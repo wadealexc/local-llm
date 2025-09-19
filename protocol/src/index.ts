@@ -31,6 +31,7 @@ export interface ModelsResponse {
 }
 
 // /modelInfo
+export const FakeModel: string = 'fake-gpt:69B (colorized)';
 export interface ModelInfoRequest {
     modelName: string;
 }

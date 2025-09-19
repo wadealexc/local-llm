@@ -50,20 +50,26 @@ export class ChatSession extends EventEmitter {
         this.emit('shutdown');
     }
 
-    async startStream() {
-        if (!this.sessionActive) throw new Error('tried to start stream while session inactive!');
-        // Don't even think about it! No events emitted if signal is aborted
-        if (this.streamCtrl?.signal?.aborted) return;
+    startStream(): AbortSignal {
+        // Call stopStream first!
+        if (this.streamCtrl) throw new Error('tried to start a stream before previous stream shut down!');
 
+        // Create a new signal and tell listeners the stream has started
+        this.streamCtrl = new AbortController();
         this.emit('stream:start');
+
+        return this.streamCtrl.signal;
     }
 
     // Close out current stream, if one is active
     // Used to abort a chat stream without shutting down the app
     stopStream(duration?: string) {
-        this.streamCtrl?.abort();
+        // Already stopped! We're done here.
+        if (!this.streamCtrl) return;
+
+        this.streamCtrl.abort();
+        this.streamCtrl = null;
         this.emit('stream:end');
-        // this.emit('stream:abort');
     }
 
     // Connect to server and fetch models
@@ -103,7 +109,7 @@ export class ChatSession extends EventEmitter {
 
         // TODO; switch to load from config (default model + system prompt)
         // - also TODO - load chat history here
-        const preferredDefaultModel: string = 'smollm2:latest';
+        const preferredDefaultModel: string = iface.FakeModel;
         const defaultModel = models.find(m => m === preferredDefaultModel)
             ?? models[0]
             ?? (() => { throw new Error('(unreachable) No models available') })();
@@ -186,37 +192,22 @@ You are a capable, thoughtful, and precise assistant. Your goal is to understand
             role: m.role as Role,
             content: m.content
         });
-        this.emit('message:push', m);
-    }
-
-    // TODO:
-    // 1. make pushMessage private
-    // 2. prevent double-user msg
-    promptOld(input: string) {
-        const m: ChatMsg = {
-            id: `${this.messages.length}`,
-            role: Role.User,
-            content: input,
-        };
-        this.messages.push(m);
-        this.emit('message:push', m);
-
-        const m2: ChatMsg = {
-            id: `${this.messages.length}`,
-            role: Role.LLM,
-            content: `idiot said: ${input}`,
-        };
-        this.messages.push(m2);
-        this.emit('message:push', m2);
+        this.emit('message:set', this.messages);
     }
 
     // Possible bad entry states:
     // - empty input (may need third party library for validation?)
     // - llm stream still ongoing, not cancelled via standard abort
     // - "double bubble", user manages to submit a message twice
-    async prompt(input: string) {
+    async prompt(input: string, trim?: number) {
         const modelName: string = this.currentModel?.modelName
             ?? (() => { throw new Error(`chatSession.prompt called before model available`) })();
+
+        // If the user is editing a prior message, update message history
+        if (trim && this.messages.length > trim) {
+            this.messages.length -= trim;
+            this.emit('message:set', this.messages);
+        }
 
         const initialLength: number = this.messages.length;
 
@@ -224,11 +215,12 @@ You are a capable, thoughtful, and precise assistant. Your goal is to understand
         // TODO - this is sync, which may mean we are blocking while history re-renders?
         this.#pushMessage({ role: Role.User, content: input });
 
-        try {
-            // Cancel previous stream if active
-            this.stopStream();
-            this.streamCtrl = new AbortController();
+        // Cancel previous stream if active, then start a new stream
+        this.stopStream();
+        const signal: AbortSignal = this.startStream();
+        let reader: ReadableStreamDefaultReader | null = null;
 
+        try {
             const req: iface.ChatRequest = {
                 username: this.username,
                 modelName: modelName,
@@ -239,21 +231,18 @@ You are a capable, thoughtful, and precise assistant. Your goal is to understand
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(req),
-                signal: this.streamCtrl.signal,
+                signal: signal,
             });
 
             if (!res.ok) throw new Error(`POST ${this.server}/chat -> ${res.status}: ${res.statusText}`);
             if (!res.body) throw new Error(`POST ${this.server}/chat -> Got ${res.status} but no response body!`);
 
             // Get ready to stream response
-            const reader = res.body.getReader();
+            reader = res.body.getReader();
             const decoder = new TextDecoder();
             let buf = '';
             let final: iface.ChatDone | null = null;
             
-            // Make sure we emit 'stream:start' before pushing to the stream
-            await this.startStream();
-
             // Read from stream, parsing response as newline-delimited chunks
             while (true) {
                 const { value, done } = await reader.read();
@@ -294,9 +283,9 @@ You are a capable, thoughtful, and precise assistant. Your goal is to understand
             this.#pushMessage({ role: Role.LLM, content: final.fullResponse });
         } catch (err: any) {
             // Reset chat history
-            while (initialLength > this.messages.length) {
-                this.messages.pop();
-                this.emit('message:pop');
+            if (initialLength !== this.messages.length) {
+                this.messages.length = initialLength;
+                this.emit('message:set', this.messages);
             }
 
             if (err?.name === 'AbortError' || String(err?.message).toLowerCase().includes('aborted')) {
@@ -306,8 +295,8 @@ You are a capable, thoughtful, and precise assistant. Your goal is to understand
                 throw err;
             }
         } finally {
-            if (this.streamCtrl?.signal?.aborted) return;
-            this.streamCtrl = null;
+            reader?.releaseLock();
+            this.stopStream();
         }
     }
 }

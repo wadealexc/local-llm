@@ -10,6 +10,7 @@ import { useStdoutDimensions } from './hooks/useStdoutDimensions.js';
 import Status from './components/status.js';
 import ModelInfo from './components/modelInfo.js';
 import Message from './components/message.js';
+import { Role } from './common.js';
 
 type Props = {
 	chat: ChatSession;
@@ -22,15 +23,32 @@ export default function App({ chat }: Props): React.ReactElement {
 	const { exit } = useApp();
 	const dimensions = useStdoutDimensions();
 
-	const { 
-		status, 
+	const {
+		status,
 		modelInfo,
 		mode,
 		streamOutput,
-		history, setHistory, 
-		stopStream, shutdown 
+		history, setHistory,
+		stopStream, shutdown
 	} = useChatSession(chat);
+
 	const [userInput, setUserInput] = useState('');
+	const [lastInput, setLastInput] = useState('');
+	const [promptTrim, setPromptTrim] = useState(0);
+
+	// TODO actual edit implementation
+
+	// // Standard text input submission function
+	// const onSubmitStandard = ((value: string) => {
+
+	// });
+
+	// const onSubmitEdit = ((value: string) => {
+	// 	setUserInput('');
+	// 	setLastInput(value);
+	// 	chat.setMessages(history.hist.slice(0,));
+	// 	chat.prompt(value);
+	// });
 
 	// Broken/wonky:
 	// ctrl+c
@@ -45,18 +63,46 @@ export default function App({ chat }: Props): React.ReactElement {
 				shutdown();
 				exit();
 			} else if (input.toLowerCase() === 'o') {
-				stopStream(); // TODO - jump back to input
+				if (mode === 'stream') {
+					stopStream();
+					setUserInput(lastInput);
+					setPromptTrim(0);
+				}
 			}
 		}
 
 		// 'scroll down' => trim one fewer message from the view
 		if (key.downArrow) {
 			if (history.trim > 0) setHistory(prev => ({ hist: prev.hist, trim: prev.trim - 1 }));
+
+			// If the last visible message is from the user, allow us to edit it
+			const lastVisible = history.hist.at(history.hist.length - history.trim - 1);
+			if (mode === 'ready') {
+				if (lastVisible?.role === Role.User) {
+					setUserInput(lastVisible.content);
+					setPromptTrim(history.trim + 1);
+				} else {
+					setUserInput('');
+					setPromptTrim(0);
+				}
+			}
 		}
 
 		// 'scroll up' => trim an additional message from the view
 		if (key.upArrow) {
 			if (history.trim < history.hist.length - 1) setHistory(prev => ({ hist: prev.hist, trim: prev.trim + 1 }));
+
+			// If the last visible message is from the user, allow us to edit it
+			const lastVisible = history.hist.at(history.hist.length - history.trim - 1);
+			if (mode === 'ready') {
+				if (lastVisible?.role === Role.User) {
+					setUserInput(lastVisible.content);
+					setPromptTrim(history.trim + 1);
+				} else {
+					setUserInput('');
+					setPromptTrim(0);
+				}
+			}
 		}
 	});
 
@@ -64,19 +110,19 @@ export default function App({ chat }: Props): React.ReactElement {
 		<Box flexDirection="column" height={dimensions.rows} width={dimensions.columns}>
 			<Box flexDirection="row" flexShrink={0} paddingTop={1}>
 				{/* app+server status box */}
-				<Status 
+				<Status
 					appName={APP_NAME}
 					appVersion={APP_VERSION}
 					hostName={chat.server}
 					serverStatus={status}
 				/>
 				{/* model info box */}
-				<ModelInfo modelInfo={modelInfo}/>
+				<ModelInfo modelInfo={modelInfo} />
 			</Box>
 
 			{/* Scrollable message history */}
 			<Box flexDirection="column" flexShrink={1} flexGrow={1} justifyContent="flex-end" overflow="hidden">
-				{ history.hist.map((m, idx) => {
+				{history.hist.map((m, idx) => {
 					return (
 						<Box key={m.id} borderStyle="round" flexShrink={0} paddingX={1}>
 							<Message
@@ -86,7 +132,7 @@ export default function App({ chat }: Props): React.ReactElement {
 							/>
 						</Box>
 					);
-				}).slice(0, history.hist.length - history.trim) }
+				}).slice(0, history.hist.length - history.trim)}
 			</Box>
 
 			{/* TODO - on submit, hide user input and show stream component */}
@@ -102,7 +148,13 @@ export default function App({ chat }: Props): React.ReactElement {
 						onChange={setUserInput}
 						onSubmit={(entered) => {
 							setUserInput('');
-							chat.prompt(entered);
+							setLastInput(entered);
+							if (promptTrim !== 0) {
+								chat.prompt(entered, promptTrim);
+								setPromptTrim(0);
+							} else {
+								chat.prompt(entered);
+							}
 						}}
 					/>
 
@@ -112,16 +164,16 @@ export default function App({ chat }: Props): React.ReactElement {
 
 			{mode === 'stream' && (
 				<Box flexDirection="column" borderStyle="round" flexShrink={0} paddingX={1}>
-					<Spinner label={`${modelInfo?.modelName} is thinking...\n`}/>
+					<Spinner label={`${modelInfo?.modelName} is thinking... (press ctrl+o to cancel)\n`} />
 
 					<Text>{streamOutput}</Text>
 
 					<Box flexShrink={0}></Box>
 				</Box>
 			)}
-			
+
 			<Box flexShrink={0} paddingX={1}>
-				<Text italic={true} dimColor color="grey">press ctrl+w to exit; press ctrl+o to stop stream</Text>
+				<Text italic={true} dimColor color="grey">press ctrl+w to exit</Text>
 			</Box>
 		</Box>
 	);
