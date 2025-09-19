@@ -20,8 +20,9 @@ const APP_VERSION = 'v0.0.1';
 
 export default function App({ chat }: Props): React.ReactElement {
 	const { exit } = useApp();
-	const { status, modelInfo, history, setHistory, shutdown } = useChatSession(chat);
 	const dimensions = useStdoutDimensions();
+	
+	const { status, modelInfo, history, setHistory, shutdown } = useChatSession(chat);
 	const [ userInput, setUserInput ] = useState('');
 
 	const [ mode, setMode ] = useState<'ready' | 'stream'>('ready');
@@ -29,6 +30,8 @@ export default function App({ chat }: Props): React.ReactElement {
 	// Broken/wonky:
 	// ctrl+c
 	// ctrl+m
+	//
+	// probably want like a single 'input manager' to direct input rather than competition b/w `useInput/TextInput`
 	useInput((input, key) => {
 		// ink/src/hooks/use-input.ts has some special handling for ctrl+c
 		// i think we can read that sequence here, but probably need to init useInput differently somehow
