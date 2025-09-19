@@ -4,10 +4,16 @@ import { type ServerStatus, type ModelInfo, type ChatMsg } from './common.js';
 import { ChatSession } from './chatSession.js';
 import { useEmitter } from './useEmitter.js';
 
+export type HistoryView = {
+    hist: ChatMsg[];
+    trim: number;
+}
+
 export function useChatSession(chat: ChatSession): {
     status: ServerStatus,
     modelInfo: ModelInfo | null,
-    history: ChatMsg[],
+    history: HistoryView,
+    setHistory: React.Dispatch<React.SetStateAction<HistoryView>>,
     shutdown: () => void,
 } {
     // Server status
@@ -18,9 +24,25 @@ export function useChatSession(chat: ChatSession): {
     const [modelInfo, setModelInfo] = useState<ModelInfo | null>(null);
     useEmitter(chat, 'model:set', (m: ModelInfo) => setModelInfo(m));
 
-    // Chat history
-    const [history, setHistory] = useState<ChatMsg[]>([]);
-    useEmitter(chat, 'message:push', (m: ChatMsg) => setHistory(h => [...h, m]));
+    /**
+     * Scrollable chat history
+     * 
+     * When we push a message to history, reset 'trim' to ensure
+     * the new message is rendered. This has the effect of jumping
+     * to the new message as it gets added.
+     * 
+     * (Concept adapted from https://github.com/sasaplus1/inks/blob/main/packages/ink-scroll-box)
+     */
+    const [history, setHistory] = useState<HistoryView>({
+        hist: [],
+        trim: 0
+    });
+    useEmitter(chat, 'message:push', (m: ChatMsg) => setHistory(
+        prev => ({
+            hist: [...prev.hist, m],
+            trim: 0
+        })
+    ));
 
     // Shutdown callback
     const shutdown = useCallback(() => {
@@ -32,6 +54,7 @@ export function useChatSession(chat: ChatSession): {
         status,
         modelInfo,
         history,
+        setHistory,
         shutdown,
     };
 }

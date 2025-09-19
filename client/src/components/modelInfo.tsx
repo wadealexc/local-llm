@@ -4,7 +4,7 @@ import { Box, Text, Newline } from 'ink';
 import { type ModelInfo } from '../common.js';
 
 type Props = {
-    modelInfo: ModelInfo | null
+    modelInfo: ModelInfo | null;
 }
 
 /**

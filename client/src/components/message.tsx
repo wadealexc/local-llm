@@ -5,9 +5,9 @@ import chalk from 'chalk';
 import { Role, type ChatMsg } from '../common.js';
 
 type Props = {
-    m: ChatMsg,
-    modelName: string | undefined,
-    userName: string,
+    m: ChatMsg;
+    modelName: string | undefined;
+    userName: string;
 }
 
 export default function Message({ 
@@ -16,10 +16,18 @@ export default function Message({
     userName,
 }: Props): React.ReactElement {
     if (m.role === Role.System) {
-        return <Text>{chalk.red(`(system prompt) >  \n`)}{m.content}</Text>;
+        return <Text>{chalk.red(`system prompt:\n`)}{m.content}</Text>;
     } else if (m.role === Role.LLM) {
-        return <Text>{chalk.cyan(`(${modelName}) >  `)}{m.content}</Text>;
+        return (
+            <>
+                <Text>{chalk.cyan(`(${modelName}) > `)}</Text><Text>{m.content}</Text>
+            </>
+        );
     } else {
-        return <Text>{chalk.green(`(${userName}) >  `)}{m.content}</Text>;
+        return (
+            <>
+                <Text>{chalk.green(`(${userName}) > `)}</Text><Text>{m.content}</Text>
+            </>
+        );
     }
 }

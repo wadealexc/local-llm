@@ -4,10 +4,10 @@ import { Box, Text, Newline } from 'ink';
 import { type ServerStatus } from '../common.js';
 
 type Props = {
-    appName: string,
-    appVersion: string,
-    hostName: string,
-    serverStatus: ServerStatus,
+    appName: string;
+    appVersion: string;
+    hostName: string;
+    serverStatus: ServerStatus;
 }
 
 /**

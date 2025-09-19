@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useReducer } from 'react';
 import { Box, Text, Newline, Spacer, Static, useStdout, useInput, useApp } from 'ink';
+import { Spinner } from '@inkjs/ui';
 import TextInput from 'ink-text-input';
 import chalk from 'chalk';
 
@@ -31,43 +32,44 @@ const APP_VERSION = 'v0.0.1';
 
 export default function App({ chat }: Props): React.ReactElement {
 	const { exit } = useApp();
-	const { status, modelInfo, history, shutdown } = useChatSession(chat);
+	const { status, modelInfo, history, setHistory, shutdown } = useChatSession(chat);
 	const dimensions = useStdoutDimensions();
-	const [ currentInput, setCurrentInput ] = useState('');
 	const [ userInput, setUserInput ] = useState('');
 	const [ counter, setCounter ] = useState(0);
 
+	const [ trim, setTrim ] = useState(0);
+
+	const [ mode, setMode ] = useState<'ready' | 'stream'>('ready');
+
+	// Broken/wonky:
+	// ctrl+c
+	// ctrl+m
 	useInput((input, key) => {
-		setCurrentInput(input);
-
-		if (key.ctrl && input.toLowerCase() === 'c') {
-			shutdown();
-			exit();
+		// ink/src/hooks/use-input.ts has some special handling for ctrl+c
+		// i think we can read that sequence here, but probably need to init useInput differently somehow
+		if (key.ctrl) {
+			if (input.toLowerCase() === 'w') {
+				shutdown();
+				exit();
+			} else if (input.toLowerCase() === 'o') {
+				if (mode === 'ready') {
+					setMode('stream');
+				} else {
+					setMode('ready');
+				}
+			}
 		}
 
+		// 'scroll down' => trim one fewer message from the view
+		if (key.downArrow) {
+			if (history.trim > 0) setHistory(prev => ({ hist: prev.hist, trim: prev.trim - 1 }));
+		}
+
+		// 'scroll up' => trim an additional message from the view
 		if (key.upArrow) {
-			shutdown();
-			exit();
+			if (history.trim < history.hist.length - 1) setHistory(prev => ({ hist: prev.hist, trim: prev.trim + 1 }));
 		}
-
-		// // append test message
-		// if (key.downArrow) {
-		// 	if (counter % 2 === 0) {
-		// 		chat.pushMessage({
-		// 			role: Role.User,
-		// 			content: `bingus${counter}`
-		// 		});
-		// 	} else {
-		// 		chat.pushMessage({
-		// 			role: Role.LLM,
-		// 			content: `bingus${counter}`
-		// 		});
-		// 	}
-		// 	setCounter(prev => prev + 1);			
-		// }
 	});
-
-
 
 	return (
 		<Box flexDirection="column" height={dimensions.rows} width={dimensions.columns}>
@@ -83,15 +85,9 @@ export default function App({ chat }: Props): React.ReactElement {
 				<ModelInfo modelInfo={modelInfo}/>
 			</Box>
 
-			{/* Message history */}
-			<Box 
-				flexDirection="column" 
-				flexGrow={1} 
-				flexShrink={1} 
-				justifyContent="flex-end"
-				overflow="hidden"
-			>
-				{ history.map((m, idx) => {
+			{/* Scrollable message history */}
+			<Box flexDirection="column" flexShrink={1} flexGrow={1} justifyContent="flex-end" overflow="hidden">
+				{ history.hist.map((m, idx) => {
 					return (
 						<Box key={m.id} borderStyle="round" flexShrink={0} paddingX={1}>
 							<Message
@@ -101,25 +97,40 @@ export default function App({ chat }: Props): React.ReactElement {
 							/>
 						</Box>
 					);
-				})}
-			</Box>			
-
-			{/* Footer - will contain user input/stream output field (and hint text zone) */}
-			<Box borderStyle="round" flexShrink={0} paddingX={1}>
-				<Text>{chalk.green(`(${chat.username}) >  `)}</Text>
-				<TextInput
-					value={userInput}
-					placeholder={`say something moron`}
-					onChange={setUserInput}
-					onSubmit={(entered) => {
-						setUserInput('');
-						chat.prompt(entered);
-					}}
-				/>
-				{/* <Text>Type to chat with {modelInfo?.modelName}</Text> */}
+				}).slice(0, history.hist.length - history.trim) }
 			</Box>
+
+			{/* TODO - on submit, hide user input and show stream component */}
+			{/* Footer - will contain user input/stream output field (and hint text zone) */}
+			{mode === 'ready' && (
+				<Box flexDirection="row" borderStyle="round" flexShrink={0} paddingX={1}>
+					<Box flexShrink={0}><Text>{chalk.green(`(${chat.username}) >  `)}</Text></Box>
+
+					{/* <Text>Type to chat with {modelInfo?.modelName}</Text> */}
+					<TextInput
+						value={userInput}
+						placeholder={`mode: ready (standard) trimmed messages: ${history.trim}`}
+						onChange={setUserInput}
+						onSubmit={(entered) => {
+							setUserInput('');
+							chat.prompt(entered);
+						}}
+					/>
+
+					<Box flexShrink={0}></Box>
+				</Box>
+			)}
+
+			{mode === 'stream' && (
+				<Box flexDirection="row" borderStyle="round" flexShrink={0} paddingX={1}>
+					<Spinner label={`${modelInfo?.modelName} is thinking...`}/>
+
+					<Box flexShrink={0}></Box>
+				</Box>
+			)}
+			
 			<Box flexShrink={0} paddingX={1}>
-				<Text italic={true} dimColor color="grey">press up arrow to exit; press down arrow to push a message</Text>
+				<Text italic={true} dimColor color="grey">press ctrl+w to exit; press ctrl+o to switch modes</Text>
 			</Box>
 			{/* <Box borderStyle="round" flexShrink={0} paddingX={1}>
 				<Text>Type to chat with {modelInfo?.modelName}</Text>
