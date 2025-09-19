@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useStdout } from 'ink';
 
-import { type Dimensions } from './common.js';
+import { type Dimensions } from '../common.js';
 
 // Get CLI dimensions that update when the CLI is resized
 export function useStdoutDimensions(): Dimensions {

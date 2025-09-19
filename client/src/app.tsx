@@ -5,8 +5,8 @@ import TextInput from 'ink-text-input';
 import chalk from 'chalk';
 
 import { ChatSession } from './chatSession.js';
-import { useChatSession } from './useChatSession.js';
-import { useStdoutDimensions } from './useStdoutDimensions.js';
+import { useChatSession } from './hooks/useChatSession.js';
+import { useStdoutDimensions } from './hooks/useStdoutDimensions.js';
 import Status from './components/status.js';
 import ModelInfo from './components/modelInfo.js';
 import Message from './components/message.js';
@@ -21,7 +21,7 @@ const APP_VERSION = 'v0.0.1';
 export default function App({ chat }: Props): React.ReactElement {
 	const { exit } = useApp();
 	const dimensions = useStdoutDimensions();
-	
+
 	const { status, modelInfo, history, setHistory, shutdown } = useChatSession(chat);
 	const [ userInput, setUserInput ] = useState('');
 
