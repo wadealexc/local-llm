@@ -7,7 +7,7 @@ import { type Dimensions } from '../common.js';
 // Get CLI dimensions that update when the CLI is resized
 export function useStdoutDimensions(): Dimensions {
     const { stdout } = useStdout();
-    const [ dimensions, setDimensions ] = useState<Dimensions>({
+    const [dimensions, setDimensions] = useState<Dimensions>({
         columns: stdout.columns,
         rows: stdout.rows,
     });

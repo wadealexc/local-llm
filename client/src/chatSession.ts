@@ -50,10 +50,20 @@ export class ChatSession extends EventEmitter {
         this.emit('shutdown');
     }
 
+    async startStream() {
+        if (!this.sessionActive) throw new Error('tried to start stream while session inactive!');
+        // Don't even think about it! No events emitted if signal is aborted
+        if (this.streamCtrl?.signal?.aborted) return;
+
+        this.emit('stream:start');
+    }
+
     // Close out current stream, if one is active
     // Used to abort a chat stream without shutting down the app
-    stopStream() {
+    stopStream(duration?: string) {
         this.streamCtrl?.abort();
+        this.emit('stream:end');
+        // this.emit('stream:abort');
     }
 
     // Connect to server and fetch models
@@ -93,11 +103,11 @@ export class ChatSession extends EventEmitter {
 
         // TODO; switch to load from config (default model + system prompt)
         // - also TODO - load chat history here
-        const preferredDefaultModel: string = 'qwen3:4b';
+        const preferredDefaultModel: string = 'smollm2:latest';
         const defaultModel = models.find(m => m === preferredDefaultModel)
             ?? models[0]
             ?? (() => { throw new Error('(unreachable) No models available') })();
-        
+
         try {
             const req: iface.ModelInfoRequest = { modelName: defaultModel };
             const res: Response = await fetch(new URL('/modelInfo', this.server), {
@@ -105,7 +115,7 @@ export class ChatSession extends EventEmitter {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(req),
             });
-            if (!res.ok) throw new Error(`POST ${this.server}/modelInfo -> ${res.status} : ${res.statusText}`); 
+            if (!res.ok) throw new Error(`POST ${this.server}/modelInfo -> ${res.status} : ${res.statusText}`);
 
             const modelInfo = (await res.json()) as iface.ModelInfoResponse;
             this.setModelInfo({
@@ -121,13 +131,13 @@ export class ChatSession extends EventEmitter {
         const dateString = (new Date())
             .toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
         this.systemPrompt =
-`You are ${defaultModel}, a self-hosted language model running on ${this.server}.
+            `You are ${defaultModel}, a self-hosted language model running on ${this.server}.
 Current date: ${dateString}
 
 Personality:
 You are a capable, thoughtful, and precise assistant. Your goal is to understand the user's intent, ask clarifying questions when needed, think step-by-step through problems, provide clear and accurate answers, and proactively anticipate helpful follow-up information. Always prioritize being truthful, nuanced, insightful, and efficient, tailoring your responses specifically to the user's needs and preferences.`;
 
-        this.pushMessage({
+        this.#pushMessage({
             role: Role.System,
             content: this.systemPrompt
         });
@@ -170,7 +180,7 @@ You are a capable, thoughtful, and precise assistant. Your goal is to understand
         }
     }
 
-    pushMessage(m: Message) {
+    #pushMessage(m: Message) {
         this.messages.push({
             id: `${this.messages.length}`,
             role: m.role as Role,
@@ -182,7 +192,7 @@ You are a capable, thoughtful, and precise assistant. Your goal is to understand
     // TODO:
     // 1. make pushMessage private
     // 2. prevent double-user msg
-    prompt(input: string) {
+    promptOld(input: string) {
         const m: ChatMsg = {
             id: `${this.messages.length}`,
             role: Role.User,
@@ -198,5 +208,106 @@ You are a capable, thoughtful, and precise assistant. Your goal is to understand
         };
         this.messages.push(m2);
         this.emit('message:push', m2);
+    }
+
+    // Possible bad entry states:
+    // - empty input (may need third party library for validation?)
+    // - llm stream still ongoing, not cancelled via standard abort
+    // - "double bubble", user manages to submit a message twice
+    async prompt(input: string) {
+        const modelName: string = this.currentModel?.modelName
+            ?? (() => { throw new Error(`chatSession.prompt called before model available`) })();
+
+        const initialLength: number = this.messages.length;
+
+        // Push message to chat history
+        // TODO - this is sync, which may mean we are blocking while history re-renders?
+        this.#pushMessage({ role: Role.User, content: input });
+
+        try {
+            // Cancel previous stream if active
+            this.stopStream();
+            this.streamCtrl = new AbortController();
+
+            const req: iface.ChatRequest = {
+                username: this.username,
+                modelName: modelName,
+                messages: this.messages
+            };
+
+            const res: Response = await fetch(new URL('/chat', this.server), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(req),
+                signal: this.streamCtrl.signal,
+            });
+
+            if (!res.ok) throw new Error(`POST ${this.server}/chat -> ${res.status}: ${res.statusText}`);
+            if (!res.body) throw new Error(`POST ${this.server}/chat -> Got ${res.status} but no response body!`);
+
+            // Get ready to stream response
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buf = '';
+            let final: iface.ChatDone | null = null;
+            
+            // Make sure we emit 'stream:start' before pushing to the stream
+            await this.startStream();
+
+            // Read from stream, parsing response as newline-delimited chunks
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                buf += decoder.decode(value, { stream: true });
+
+                while (true) {
+                    // Only process complete lines of ND-JSON
+                    const nl = buf.indexOf('\n');
+                    if (nl === -1) break;
+
+                    const line = buf.slice(0, nl);
+                    buf = buf.slice(nl + 1);
+                    if (!line.trim()) continue;
+
+                    const evt = JSON.parse(line) as iface.ChatEvent;
+
+                    switch (evt.type) {
+                        case 'delta':
+                            // this is synchronous, but i think we want that here.
+                            this.emit('stream:push', evt.content);
+                            break;
+                        case 'done':
+                            final = evt as iface.ChatDone;
+                            break;
+                        case 'error':
+                            throw new Error(evt.message);
+                    }
+                }
+            }
+
+            if (!final) throw new Error('stream ended without final payload');
+
+            // End stream and emit time taken. Then push LLM message to chat history
+            const seconds: number = Number(final.totalDuration) / 1e9;
+            this.stopStream(seconds.toFixed(3));
+            this.#pushMessage({ role: Role.LLM, content: final.fullResponse });
+        } catch (err: any) {
+            // Reset chat history
+            while (initialLength > this.messages.length) {
+                this.messages.pop();
+                this.emit('message:pop');
+            }
+
+            if (err?.name === 'AbortError' || String(err?.message).toLowerCase().includes('aborted')) {
+                // this.output.write(chalk.dim.italic('\n(^C) canceled\n')); TODO log/display?
+                return;
+            } else {
+                throw err;
+            }
+        } finally {
+            if (this.streamCtrl?.signal?.aborted) return;
+            this.streamCtrl = null;
+        }
     }
 }

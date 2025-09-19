@@ -20,7 +20,7 @@ export default function Message({
     } else if (m.role === Role.LLM) {
         return (
             <>
-                <Text>{chalk.cyan(`(${modelName}) > `)}</Text><Text>{m.content}</Text>
+                <Text>{chalk.cyan(`(${modelName}) >  `)}</Text><Text>{m.content}</Text>
             </>
         );
     } else {

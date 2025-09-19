@@ -25,7 +25,7 @@ for (const model of rawModels) {
 }
 
 app.get('/ping', (req, res) => {
-    console.log('got ping');
+    // console.log('got ping');
     res.send('pong');
 });
 

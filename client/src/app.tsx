@@ -22,10 +22,15 @@ export default function App({ chat }: Props): React.ReactElement {
 	const { exit } = useApp();
 	const dimensions = useStdoutDimensions();
 
-	const { status, modelInfo, history, setHistory, shutdown } = useChatSession(chat);
-	const [ userInput, setUserInput ] = useState('');
-
-	const [ mode, setMode ] = useState<'ready' | 'stream'>('ready');
+	const { 
+		status, 
+		modelInfo,
+		mode,
+		streamOutput,
+		history, setHistory, 
+		stopStream, shutdown 
+	} = useChatSession(chat);
+	const [userInput, setUserInput] = useState('');
 
 	// Broken/wonky:
 	// ctrl+c
@@ -40,11 +45,7 @@ export default function App({ chat }: Props): React.ReactElement {
 				shutdown();
 				exit();
 			} else if (input.toLowerCase() === 'o') {
-				if (mode === 'ready') {
-					setMode('stream');
-				} else {
-					setMode('ready');
-				}
+				stopStream(); // TODO - jump back to input
 			}
 		}
 
@@ -110,15 +111,17 @@ export default function App({ chat }: Props): React.ReactElement {
 			)}
 
 			{mode === 'stream' && (
-				<Box flexDirection="row" borderStyle="round" flexShrink={0} paddingX={1}>
-					<Spinner label={`${modelInfo?.modelName} is thinking...`}/>
+				<Box flexDirection="column" borderStyle="round" flexShrink={0} paddingX={1}>
+					<Spinner label={`${modelInfo?.modelName} is thinking...\n`}/>
+
+					<Text>{streamOutput}</Text>
 
 					<Box flexShrink={0}></Box>
 				</Box>
 			)}
 			
 			<Box flexShrink={0} paddingX={1}>
-				<Text italic={true} dimColor color="grey">press ctrl+w to exit; press ctrl+o to switch modes</Text>
+				<Text italic={true} dimColor color="grey">press ctrl+w to exit; press ctrl+o to stop stream</Text>
 			</Box>
 		</Box>
 	);
