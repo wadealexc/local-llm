@@ -11,18 +11,6 @@ import Status from './components/status.js';
 import ModelInfo from './components/modelInfo.js';
 import Message from './components/message.js';
 
-enum Role {
-    User = "user",
-    LLM = "assistant",
-    System = "system",
-}
-
-enum RoleName {
-    User = "fox",
-    LLM = "llm",
-    System = "system",
-}
-
 type Props = {
 	chat: ChatSession;
 }
@@ -35,9 +23,6 @@ export default function App({ chat }: Props): React.ReactElement {
 	const { status, modelInfo, history, setHistory, shutdown } = useChatSession(chat);
 	const dimensions = useStdoutDimensions();
 	const [ userInput, setUserInput ] = useState('');
-	const [ counter, setCounter ] = useState(0);
-
-	const [ trim, setTrim ] = useState(0);
 
 	const [ mode, setMode ] = useState<'ready' | 'stream'>('ready');
 
@@ -132,48 +117,6 @@ export default function App({ chat }: Props): React.ReactElement {
 			<Box flexShrink={0} paddingX={1}>
 				<Text italic={true} dimColor color="grey">press ctrl+w to exit; press ctrl+o to switch modes</Text>
 			</Box>
-			{/* <Box borderStyle="round" flexShrink={0} paddingX={1}>
-				<Text>Type to chat with {modelInfo?.modelName}</Text>
-			</Box>
-			<Box flexShrink={0} paddingX={1}>
-				<Text italic={true} dimColor color="grey">press up arrow to exit; press down arrow to push a message</Text>
-			</Box> */}
 		</Box>
 	);
 }
-
-// export default function App({ chat }: Props): React.ReactElement {
-// 	const { exit } = useApp();
-// 	const [inputKey, setInputKey] = useState(0);
-// 	const [curInput, setCurInput] = useState('');
-// 	const [lastInput, setLastInput] = useState('');
-
-// 	return (
-// 		// flexDirection defines how child elements are laid out in the box
-// 		// "column" means top-to-bottom
-// 		// "row" - left to right
-// 		<Box flexDirection="column">
-			
-
-
-
-// 			{/* <ChatHistory history={chat.history}/>
-
-// 			<Box borderStyle="round" paddingX={1}>
-// 				<Text>{chat.userPrompt()}</Text>
-// 				<TextInput
-// 					key={inputKey}
-// 					placeholder="chat with the llm"
-// 					defaultValue={curInput}
-// 					onChange={setCurInput}
-// 					onSubmit={(entered) => {
-// 						setLastInput(entered);
-// 						setCurInput('');
-// 						setInputKey(prev => prev + 1);
-// 						chat.prompt(entered);
-// 					}}
-// 				/>
-// 			</Box> */}
-// 		</Box>
-// 	);
-// }
