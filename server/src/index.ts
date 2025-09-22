@@ -1,9 +1,10 @@
 import express from 'express';
-import ollama, { type ModelResponse, type ShowResponse, type AbortableAsyncIterator, type ChatResponse } from 'ollama';
+import ollama from 'ollama';
+import type { ModelResponse, ShowResponse, AbortableAsyncIterator, ChatResponse } from 'ollama';
 
 import * as iface from '@local-llm/protocol';
 
-import { Model } from './model.js';
+import { Model, MockModel } from './model.js';
 
 const HOST: string = 'http://oak.lan';
 const PORT: number = 8000;
@@ -11,18 +12,29 @@ const app = express();
 app.use(express.json());
 
 // Get loaded models
-let rawModels: ModelResponse[] = (await ollama.list()).models;
+const rawModels: ModelResponse[] = (await ollama.list()).models;
 if (rawModels.length === 0) throw new Error('No models loaded.');
 
-let models = new Map<string, Model>();
-
-console.log(`Loaded ${rawModels.length} models:`);
+const models = new Map<string, Model>();
 for (const model of rawModels) {
     let info: ShowResponse = await ollama.show({ model: model.model });
     models.set(model.name, new Model(model, info));
-
-    console.log(` - ${model.name} (${info.capabilities})`);
 }
+
+// Create mock model for testing
+models.set(iface.FakeModel, new MockModel(iface.FakeModel));
+
+console.log(`Loaded models:`);
+models.entries().forEach(([modelName, model]) => {
+    console.log(` - ${modelName} (${model.capabilities})`);
+});
+
+app.get('/ping', (req, res) => {
+    // const modelName = (req.body as iface.ModelInfoRequest).modelName;
+
+    // console.log('got ping');
+    res.send('pong');
+});
 
 app.get('/models', (req, res) => {
     let response: iface.ModelsResponse = { models: [] }
@@ -36,16 +48,15 @@ app.get('/models', (req, res) => {
 
 app.post('/modelInfo', async (req, res) => {
     const modelName = (req.body as iface.ModelInfoRequest).modelName;
-    if (!models.has(modelName)) {
+    const model = models.get(modelName);
+    if (!model) {
         return res.status(400).send(`model ${modelName} not found`);
     }
 
-    const info = await ollama.show({ model: modelName });
-
     let response: iface.ModelInfoResponse = {
-        parameterSize: info.details.parameter_size,
-        quantizationLevel: info.details.quantization_level,
-        capabilities: info.capabilities,
+        parameterSize: model.parameterSize,
+        quantizationLevel: model.quantizationLevel,
+        capabilities: model.capabilities,
     };
 
     res.send(response);
@@ -73,11 +84,7 @@ app.post('/chat', async (req, res) => {
 
     try {
         // Stream response from model
-        iterator = await ollama.chat({
-            model: model.name,
-            messages: request.messages,
-            stream: true,
-        });
+        iterator = await model.chatStream(request.messages);
 
         for await (const part of iterator) {
             totalDuration = part.total_duration;
@@ -110,7 +117,7 @@ app.post('/chat', async (req, res) => {
         const msg = String(err?.message ?? err);
         console.log(`\nerr: ${msg}`);
 
-        const aborted = msg.toLowerCase().includes('aborted') || msg.includes('ERR_STREAM_PREMATURE_CLOSE');        
+        const aborted = msg.toLowerCase().includes('aborted') || msg.includes('ERR_STREAM_PREMATURE_CLOSE');
         if (!aborted && !res.writableEnded) {
             res.write(JSON.stringify({ type: 'error', message: msg }) + '\n');
         }

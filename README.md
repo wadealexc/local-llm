@@ -30,11 +30,21 @@ TODO:
     - better support for copy/paste in client
     - better greeter page (print the actual commands)
     - implement more commands!
+- React.useMemo for targeted re-renders
+- look thru:
+    - https://github.com/sasaplus1/inks/tree/main/packages for cool ink extenders
+    - https://github.com/jrr/inkle/blob/dev/src/ui.tsx for example ink usage
 
 ### Mood Board
 
 Codex: https://github.com/openai/codex/tree/main/codex-cli 
 * https://github.com/vadimdemedes/ink for beautiful terminal UI?
+
+Commander UI:
+![alt text](commander.png)
+
+Codex UI:
+![alt text](codex.png)
 
 Caves of Qud vibe:
 ![alt text](image.png)

@@ -1,152 +1,253 @@
-import * as readline from 'node:readline/promises';
-import { stdin as input } from 'node:process';
+import { EventEmitter } from 'events';
 import { type Message } from 'ollama';
-
-import chalk from 'chalk';
 
 import * as iface from '@local-llm/protocol';
 
-enum Role {
-    User = "user",
-    LLM = "assistant",
-    System = "system",
-}
+import { Role, type ServerStatus, type ModelInfo, type ChatMsg } from './common.js';
+import { ChatNode, ChatTree, type ChatRoot } from './utils/chatTree.js';
 
-export class ChatSession {
+export class ChatSession extends EventEmitter {
 
-    private loaded: boolean = false;
-    private streamController: AbortController | null = null;
-    public output: NodeJS.WritableStream;
+    // Session/Stream control
+    private sessionActive: boolean = false;
+    private streamCtrl: AbortController | null = null;
+    private pingCtrl: AbortController | null = null;
+
+    // Streams/Connections
+    private pingTimer: NodeJS.Timeout | undefined;
+
+    // Session info
+    public username: string;
 
     public server: string;
-    public username: string = 'guest';
+    public serverStatus: ServerStatus = 'not loaded';
+    public currentModel: ModelInfo | null = null;
 
-    public currentModel: string = '';
-    public systemPrompt: string = '';
+    // Keep track of all chats, as well as the currently-active chat and the working index in that chat
+    private chatTree: ChatTree;
+    private selectedMessage?: ChatNode;
 
-    private messages: Message[] = [];
+    constructor(server: string, username: string) {
+        super();
 
-    constructor(server: string, output: NodeJS.WritableStream) {
         this.server = server;
-        this.output = output;
-    }
-
-    /**
-     * If we have an active stream, cancel it and return true
-     * @returns true if a stream was cancelled
-     */
-    cancelStream(): boolean {
-        if (!this.streamController) {
-            return false;
-        }
-
-        this.streamController.abort();
-        return true;
-    }
-
-    /**
-     * POST:
-     */
-
-    async load() {
-        if (this.loaded) throw new Error(`Already loaded!`);
-
-        // Get available models from server
-        const res: Response = await fetch(new URL('/models', this.server));
-        if (!res.ok) throw new Error(`GET ${this.server}/models -> ${res.status} : ${res.statusText}`);
-
-        let modelInfo = (await res.json()) as iface.ModelsResponse;
-        if (modelInfo.models.length === 0) {
-            throw new Error('No models available');
-        }
-
-        // Display info on available models and select the user's default model
-        this.output.write(`Server is online. ${modelInfo.models.length} models available.\n`);
-        for (const model of modelInfo.models) {
-            this.output.write(` - ${model}\n`);
-        }
-        this.output.write('\n');
-
-        // Prompt user for display name
-        const rl = readline.createInterface({ input, output: this.output });
-        let username: string = (await rl.question('enter name (or leave blank for guest): '))
-            .trim()
-            .toLowerCase() || 'guest';
-
-        rl.close();
-
         this.username = username;
+        this.chatTree = new ChatTree();
+    }
+
+    topics(): string[] {
+        return this.chatTree.roots.map((root) => root.topic);
+    }
+
+    // Create a new chat and select it
+    newTopic(topic: string, modelName: string) {
+        const root: ChatNode = this.chatTree.pushTopic(topic, modelName, this.server);
+        // this.emit('topic:new'); // TODO
+        this.selectedMessage = root;
+
+        const messages = root.getMessages();
+        this.emit('message:set', messages);
+    }
+
+    // Connect to server and fetch models
+    async startSession() {
+        // Don't start a session if we have an active one
+        if (this.sessionActive) throw new Error('tried to start two concurrent sessions!');
+        this.sessionActive = true;
+
+        // ping once immediately
+        await this.pingServer();
+
+        // ping server once per second
+        const loop = async () => {
+            if (!this.sessionActive) return;
+            await this.pingServer();
+            if (!this.sessionActive) return;
+
+            this.pingTimer = setTimeout(loop, 1000);
+            this.pingTimer.unref(); // don't hold event loop hostage if process is exiting
+        };
+        this.pingTimer = setTimeout(loop, 1000);
+        this.pingTimer.unref();
+
+        // Fetch available models from server
+        let models: string[] = [];
+        try {
+            const res: Response = await fetch(new URL('/models', this.server));
+            if (!res.ok) throw new Error(`GET ${this.server}/models -> ${res.status} : ${res.statusText}`);
+
+            const modelsRes = (await res.json()) as iface.ModelsResponse;
+            if (modelsRes.models.length === 0) throw new Error(`Server did not return any models`);
+
+            models = modelsRes.models;
+        } catch (err: any) {
+            throw new Error(`Error fetching models from server: ${err}`);
+        }
 
         // TODO; switch to load from config (default model + system prompt)
         // - also TODO - load chat history here
-        let preferredDefaultModel: string = 'qwen3:4b'
-        this.currentModel =
-            modelInfo.models.find(model => model === preferredDefaultModel)
-            ?? modelInfo.models[0]
-            ?? (() => { throw new Error('(unreachable) No models available.'); })();
-
-        // Create system prompt    
-        let dateString = (new Date())
-            .toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-        this.systemPrompt =
-            `You are a self-hosted language model running on ${this.server}.
-Current date: ${dateString}
-
-Personality:
-You are a capable, thoughtful, and precise assistant. Your goal is to understand the user's intent, ask clarifying questions when needed, think step-by-step through problems, provide clear and accurate answers, and proactively anticipate helpful follow-up information. Always prioritize being truthful, nuanced, insightful, and efficient, tailoring your responses specifically to the user's needs and preferences.`;
-
-        // Insert system prompt into message history
-        this.messages.push({
-            role: Role.System,
-            content: this.systemPrompt
-        });
-
-        // Greet user
-        process.stdout.write(
-            `${this.sessionPrompt()}hello, ${this.username}! welcome to ${chalk.magenta.bold('treehouse.repl')} 🌳
-you are currently chatting with the default model (${chalk.cyan.bold(this.currentModel)}) 🤖
-${chalk.italic(`... type ${chalk.yellow.italic('.help')} to see available commands!`)}\n`);
-
-        this.loaded = true;
-    }
-
-    async prompt(input: string) {
-        if (!this.loaded) throw new Error('Not loaded!');
-
-        // Remember initial message history length in case we need to reset due to abort
-        const initialLength = this.messages.length;
-
-        // Push input to chat history
-        this.messages.push({ role: Role.User, content: input });
-        this.streamController = new AbortController();
-
-        const req: iface.ChatRequest = {
-            username: this.username,
-            modelName: this.currentModel,
-            messages: this.messages
-        };
+        const preferredDefaultModel: string = iface.FakeModel;
+        const defaultModel = models.find(m => m === preferredDefaultModel)
+            ?? models[0]
+            ?? (() => { throw new Error('(unreachable) No models available') })();
 
         try {
-            // Send chat to server
+            const req: iface.ModelInfoRequest = { modelName: defaultModel };
+            const res: Response = await fetch(new URL('/modelInfo', this.server), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(req),
+            });
+            if (!res.ok) throw new Error(`POST ${this.server}/modelInfo -> ${res.status} : ${res.statusText}`);
+
+            const modelInfo = (await res.json()) as iface.ModelInfoResponse;
+            this.setModelInfo({
+                modelName: defaultModel,
+                params: modelInfo.parameterSize,
+                quantization: modelInfo.quantizationLevel,
+            });
+        } catch (err: any) {
+            throw new Error(`Error decoding response from /models: ${err}`);
+        }
+
+        // Push a new topic and system message to the chat tree and select it as the default
+        this.newTopic(`topic ${this.topics().length}`, defaultModel);
+    }
+
+    // Shutdown any ongoing connections with the server and close out any streams.
+    // Used when stopping the app. No-op if we don't have an active session
+    stopSession() {
+        process.stderr.write('stopSession called\n');
+
+        if (this.sessionActive === false) return;
+        this.sessionActive = false;
+
+        if (this.pingTimer) {
+            clearTimeout(this.pingTimer);
+            this.pingTimer = undefined;
+        }
+
+        this.stopStream();
+        this.emit('shutdown');
+    }
+
+    startStream(): AbortSignal {
+        // Call stopStream first!
+        if (this.streamCtrl) throw new Error('tried to start a stream before previous stream shut down!');
+
+        // Create a new signal and tell listeners the stream has started
+        this.streamCtrl = new AbortController();
+        this.emit('stream:start');
+
+        return this.streamCtrl.signal;
+    }
+
+    // Close out current stream, if one is active
+    // Used to abort a chat stream without shutting down the app
+    stopStream(duration?: string) {
+        // Already stopped! We're done here.
+        if (!this.streamCtrl) return;
+
+        this.streamCtrl.abort();
+        this.streamCtrl = null;
+
+        if (!duration) {
+            this.emit('stream:abort');
+        } else {
+            this.emit('stream:end', duration);
+        }
+    }
+
+    async pingServer() {
+        try {
+            // Cancel previous fetch if somehow still active
+            this.pingCtrl?.abort();
+            this.pingCtrl = new AbortController();
+
+            const res = await fetch(new URL('/ping', this.server), {
+                signal: this.pingCtrl.signal,
+            });
+
+            // Discard body
+            res.body?.cancel?.();
+            this.setStatus(res.ok ? 'online' : 'errors');
+        } catch (err: any) {
+            this.setStatus('offline');
+        } finally {
+            if (this.pingCtrl?.signal?.aborted) return;
+            this.pingCtrl = null;
+        }
+    }
+
+    // Set this.serverStatus, emitting an event if the new value is different
+    setStatus(status: ServerStatus) {
+        if (status !== this.serverStatus) {
+            this.serverStatus = status;
+            this.emit('server:status', status);
+        }
+    }
+
+    // Set this.currentModel, emitting an event if the new value is different
+    setModelInfo(info: ModelInfo) {
+        if (!this.currentModel || this.currentModel.modelName !== info.modelName) {
+            this.currentModel = info;
+            this.emit('model:set', info);
+        }
+    }
+
+    // TODO - this.emit is sync, which may mean we are blocking while history re-renders?
+    #pushMessage(m: ChatMsg): ChatMsg[] {
+        if (!this.selectedMessage) throw new Error('chatSession.pushMessage called before topic created');
+
+        const child = this.selectedMessage.push(m);
+        this.selectedMessage = child;
+
+        const messages = child.getMessages();
+        this.emit('message:set', messages);
+
+        return messages;
+    }
+
+    // Possible bad entry states:
+    // - empty input (may need third party library for validation?)
+    // - llm stream still ongoing, not cancelled via standard abort
+    // - "double bubble", user manages to submit a message twice
+    async prompt(input: string, trim?: number) {
+        const modelName: string = this.currentModel?.modelName
+            ?? (() => { throw new Error(`chatSession.prompt called before model available`) })();
+
+        // Push message to chat history, saving our place in case we abort
+        const initialSelected = this.selectedMessage;
+        const messages: ChatMsg[] = this.#pushMessage({ role: Role.User, content: input });
+
+        // Cancel previous stream if active, then start a new stream
+        this.stopStream();
+        const signal: AbortSignal = this.startStream();
+        let reader: ReadableStreamDefaultReader | null = null;
+
+        try {
+            const req: iface.ChatRequest = {
+                username: this.username,
+                modelName: modelName,
+                messages: messages
+            };
+
             const res: Response = await fetch(new URL('/chat', this.server), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(req),
-                signal: this.streamController.signal,
+                signal: signal,
             });
 
             if (!res.ok) throw new Error(`POST ${this.server}/chat -> ${res.status}: ${res.statusText}`);
             if (!res.body) throw new Error(`POST ${this.server}/chat -> Got ${res.status} but no response body!`);
 
             // Get ready to stream response
-            const reader = res.body.getReader();
+            reader = res.body.getReader();
             const decoder = new TextDecoder();
             let buf = '';
             let final: iface.ChatDone | null = null;
-
-            // Start with model prompt (e.g. "(gpt4.0) > ")
-            this.output.write(this.modelPrompt());
-
+            
             // Read from stream, parsing response as newline-delimited chunks
             while (true) {
                 const { value, done } = await reader.read();
@@ -155,7 +256,7 @@ ${chalk.italic(`... type ${chalk.yellow.italic('.help')} to see available comman
                 buf += decoder.decode(value, { stream: true });
 
                 while (true) {
-                    // Only process complete lines
+                    // Only process complete lines of ND-JSON
                     const nl = buf.indexOf('\n');
                     if (nl === -1) break;
 
@@ -167,7 +268,8 @@ ${chalk.italic(`... type ${chalk.yellow.italic('.help')} to see available comman
 
                     switch (evt.type) {
                         case 'delta':
-                            this.output.write(evt.content);
+                            // this is synchronous, but i think we want that here.
+                            this.emit('stream:push', evt.content);
                             break;
                         case 'done':
                             final = evt as iface.ChatDone;
@@ -180,111 +282,55 @@ ${chalk.italic(`... type ${chalk.yellow.italic('.help')} to see available comman
 
             if (!final) throw new Error('stream ended without final payload');
 
-            // Push LLM message to chat history and output total time taken
-            this.messages.push({ role: Role.LLM, content: final.fullResponse });
+            // End stream and emit time taken. Then push LLM message to chat history
             const seconds: number = Number(final.totalDuration) / 1e9;
-            this.output.write(`\n${chalk.italic.dim(`(... done in ${seconds.toFixed(3)} sec)\n`)}`);
+            this.stopStream(seconds.toFixed(3));
+            this.#pushMessage({ role: Role.LLM, content: final.fullResponse });
         } catch (err: any) {
             // Reset chat history
-            this.messages.length = initialLength;
+            if (initialSelected) {
+                this.selectedMessage = initialSelected;
+                this.emit('message:set', this.selectedMessage.getMessages());
+                this.emit('message:next', this.selectedMessage?.getNext()?.data);
+            }
 
             if (err?.name === 'AbortError' || String(err?.message).toLowerCase().includes('aborted')) {
-                this.output.write(chalk.dim.italic('\n(^C) canceled\n'));
+                // this.output.write(chalk.dim.italic('\n(^C) canceled\n')); TODO log/display?
                 return;
             } else {
                 throw err;
             }
         } finally {
-            this.streamController = null;
+            reader?.releaseLock();
+            this.stopStream();
         }
     }
 
-    async useModel(modelName: string) {
-        if (!this.loaded) throw new Error('Not loaded!');
+    // Move this.selectedMessage to its parent, if it exists (else no-op)
+    // Emit the 'next visible message' if we were to select the child
+    selectParent() {
+        if (!this.selectedMessage?.parent) return;
 
-        const res: Response = await fetch(new URL('/models', this.server));
-        if (!res.ok) throw new Error(`GET ${this.server}/models -> ${res.status} : ${res.statusText}`);
-
-        let modelInfo = (await res.json()) as iface.ModelsResponse;
-
-        if (!modelInfo.models.find(model => model === modelName)) {
-            throw new Error(`model ${modelName} not found`);
-        } else if (modelName === this.currentModel) {
-            throw new Error(`already using model ${modelName}`);
-        }
-
-        this.currentModel = modelName;
-        this.output.write(`${this.sessionPrompt()}you are now chatting with ${chalk.cyan.bold(this.currentModel)}\n`);
+        const prevParent = this.selectedMessage;
+        this.selectedMessage = this.selectedMessage.parent;
+        this.emit('message:set', this.selectedMessage.getMessages());
+        this.emit('message:next', prevParent.data);
     }
 
-    /**
-     * GET:
-     */
+    // Move this.selectedMessage to its first child, if it exists (else no-op)
+    selectChild() {
+        if (!this.selectedMessage) return;
+        const child = this.selectedMessage.getNext();
+        if (!child) return;
 
-    async listModels() {
-        if (!this.loaded) throw new Error('Not loaded!');
-
-        const res: Response = await fetch(new URL('/models', this.server));
-        if (!res.ok) throw new Error(`GET ${this.server}/models -> ${res.status} : ${res.statusText}`);
-
-        let modelInfo = (await res.json()) as iface.ModelsResponse;
-
-        this.output.write(`${this.sessionPrompt()}${modelInfo.models.length} models available:\n`);
-        for (const model of modelInfo.models) {
-            this.output.write(` - ${model}\n`);
-        }
-
-        this.output.write(`\nYou are using: ${chalk.cyan.bold(this.currentModel)}\n`);
+        this.selectedMessage = child;
+        this.emit('message:set', this.selectedMessage.getMessages());
+        this.emit('message:next', child.getNext()?.data);
     }
 
-    async getModelInfo(modelName: string) {
-        if (!this.loaded) throw new Error('Not loaded!');
-
-        const req: iface.ModelInfoRequest = { modelName: modelName };
-        const res: Response = await fetch(new URL('/modelInfo', this.server), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(req),
-        });
-
-        if (!res.ok) throw new Error(`POST ${this.server}/modelInfo -> ${res.status} : ${res.statusText}`);
-
-        const modelInfo = (await res.json()) as iface.ModelInfoResponse;
-        this.output.write(this.sessionPrompt());
-        this.output.write(` model info for ${chalk.cyan.bold(modelName)}:\n`);
-        this.output.write(` - parameter size: ${modelInfo.parameterSize}\n`);
-        this.output.write(` - quantization level: ${modelInfo.quantizationLevel}\n`);
-        this.output.write(` - capabilities: ${modelInfo.capabilities}\n`);
-    }
-
-    /**
-     * Util:
-     */
-
-    /**
-     * @returns the string displayed for the user prompt (e.g. "(fox) > ")
-     */
-    userPrompt(): string {
-        if (this.loaded) {
-            return chalk.green.bold(`(${this.username}) > `);
-        } else {
-            return chalk.green.bold(`(you) > `);
-        }
-    }
-
-    /**
-     * @returns the string displayed for the current llm (e.g. "(gpt4.0) > ")
-     */
-    modelPrompt(): string {
-        if (!this.loaded) throw new Error('Not loaded!');
-
-        return chalk.cyan.bold(`(${this.currentModel}) > `);
-    }
-
-    /**
-     * @returns the string displayed when the system displays info for the user
-     */
-    sessionPrompt(): string {
-        return chalk.red.bold(`(system) > `);
-    }
+    // selectNextMessage() {
+    //     if (!this.selectedMessage?.parent) return;
+        
+    //     this.selectedMessage.parent.selectChild()
+    // }
 }
