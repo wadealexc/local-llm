@@ -30,6 +30,7 @@ TODO:
     - better support for copy/paste in client
     - better greeter page (print the actual commands)
     - implement more commands!
+- React.useMemo for targeted re-renders
 - look thru:
     - https://github.com/sasaplus1/inks/tree/main/packages for cool ink extenders
     - https://github.com/jrr/inkle/blob/dev/src/ui.tsx for example ink usage

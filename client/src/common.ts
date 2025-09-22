@@ -20,7 +20,6 @@ export enum Role {
 };
 
 export type ChatMsg = {
-    id: string;
     role: Role;
     content: string;
 }

@@ -4,7 +4,7 @@ import { type Message } from 'ollama';
 import * as iface from '@local-llm/protocol';
 
 import { Role, type ServerStatus, type ModelInfo, type ChatMsg } from './common.js';
-
+import { ChatNode, ChatTree, type ChatRoot } from './utils/chatTree.js';
 
 export class ChatSession extends EventEmitter {
 
@@ -23,53 +23,30 @@ export class ChatSession extends EventEmitter {
     public serverStatus: ServerStatus = 'not loaded';
     public currentModel: ModelInfo | null = null;
 
-    private systemPrompt: string = '';
-    public messages: ChatMsg[] = [];
+    // Keep track of all chats, as well as the currently-active chat and the working index in that chat
+    private chatTree: ChatTree;
+    private selectedMessage?: ChatNode;
 
     constructor(server: string, username: string) {
         super();
 
         this.server = server;
         this.username = username;
+        this.chatTree = new ChatTree();
     }
 
-    // Shutdown any ongoing connections with the server and close out any streams.
-    // Used when stopping the app. No-op if we don't have an active session
-    stopSession() {
-        process.stderr.write('stopSession called\n');
-
-        if (this.sessionActive === false) return;
-        this.sessionActive = false;
-
-        if (this.pingTimer) {
-            clearTimeout(this.pingTimer);
-            this.pingTimer = undefined;
-        }
-
-        this.stopStream();
-        this.emit('shutdown');
+    topics(): string[] {
+        return this.chatTree.roots.map((root) => root.topic);
     }
 
-    startStream(): AbortSignal {
-        // Call stopStream first!
-        if (this.streamCtrl) throw new Error('tried to start a stream before previous stream shut down!');
+    // Create a new chat and select it
+    newTopic(topic: string, modelName: string) {
+        const root: ChatNode = this.chatTree.pushTopic(topic, modelName, this.server);
+        // this.emit('topic:new'); // TODO
+        this.selectedMessage = root;
 
-        // Create a new signal and tell listeners the stream has started
-        this.streamCtrl = new AbortController();
-        this.emit('stream:start');
-
-        return this.streamCtrl.signal;
-    }
-
-    // Close out current stream, if one is active
-    // Used to abort a chat stream without shutting down the app
-    stopStream(duration?: string) {
-        // Already stopped! We're done here.
-        if (!this.streamCtrl) return;
-
-        this.streamCtrl.abort();
-        this.streamCtrl = null;
-        this.emit('stream:end');
+        const messages = root.getMessages();
+        this.emit('message:set', messages);
     }
 
     // Connect to server and fetch models
@@ -133,20 +110,52 @@ export class ChatSession extends EventEmitter {
             throw new Error(`Error decoding response from /models: ${err}`);
         }
 
-        // Create system prompt    
-        const dateString = (new Date())
-            .toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-        this.systemPrompt =
-            `You are ${defaultModel}, a self-hosted language model running on ${this.server}.
-Current date: ${dateString}
+        // Push a new topic and system message to the chat tree and select it as the default
+        this.newTopic(`topic ${this.topics().length}`, defaultModel);
+    }
 
-Personality:
-You are a capable, thoughtful, and precise assistant. Your goal is to understand the user's intent, ask clarifying questions when needed, think step-by-step through problems, provide clear and accurate answers, and proactively anticipate helpful follow-up information. Always prioritize being truthful, nuanced, insightful, and efficient, tailoring your responses specifically to the user's needs and preferences.`;
+    // Shutdown any ongoing connections with the server and close out any streams.
+    // Used when stopping the app. No-op if we don't have an active session
+    stopSession() {
+        process.stderr.write('stopSession called\n');
 
-        this.#pushMessage({
-            role: Role.System,
-            content: this.systemPrompt
-        });
+        if (this.sessionActive === false) return;
+        this.sessionActive = false;
+
+        if (this.pingTimer) {
+            clearTimeout(this.pingTimer);
+            this.pingTimer = undefined;
+        }
+
+        this.stopStream();
+        this.emit('shutdown');
+    }
+
+    startStream(): AbortSignal {
+        // Call stopStream first!
+        if (this.streamCtrl) throw new Error('tried to start a stream before previous stream shut down!');
+
+        // Create a new signal and tell listeners the stream has started
+        this.streamCtrl = new AbortController();
+        this.emit('stream:start');
+
+        return this.streamCtrl.signal;
+    }
+
+    // Close out current stream, if one is active
+    // Used to abort a chat stream without shutting down the app
+    stopStream(duration?: string) {
+        // Already stopped! We're done here.
+        if (!this.streamCtrl) return;
+
+        this.streamCtrl.abort();
+        this.streamCtrl = null;
+
+        if (!duration) {
+            this.emit('stream:abort');
+        } else {
+            this.emit('stream:end', duration);
+        }
     }
 
     async pingServer() {
@@ -186,13 +195,17 @@ You are a capable, thoughtful, and precise assistant. Your goal is to understand
         }
     }
 
-    #pushMessage(m: Message) {
-        this.messages.push({
-            id: `${this.messages.length}`,
-            role: m.role as Role,
-            content: m.content
-        });
-        this.emit('message:set', this.messages);
+    // TODO - this.emit is sync, which may mean we are blocking while history re-renders?
+    #pushMessage(m: ChatMsg): ChatMsg[] {
+        if (!this.selectedMessage) throw new Error('chatSession.pushMessage called before topic created');
+
+        const child = this.selectedMessage.push(m);
+        this.selectedMessage = child;
+
+        const messages = child.getMessages();
+        this.emit('message:set', messages);
+
+        return messages;
     }
 
     // Possible bad entry states:
@@ -203,17 +216,9 @@ You are a capable, thoughtful, and precise assistant. Your goal is to understand
         const modelName: string = this.currentModel?.modelName
             ?? (() => { throw new Error(`chatSession.prompt called before model available`) })();
 
-        // If the user is editing a prior message, update message history
-        if (trim && this.messages.length > trim) {
-            this.messages.length -= trim;
-            this.emit('message:set', this.messages);
-        }
-
-        const initialLength: number = this.messages.length;
-
-        // Push message to chat history
-        // TODO - this is sync, which may mean we are blocking while history re-renders?
-        this.#pushMessage({ role: Role.User, content: input });
+        // Push message to chat history, saving our place in case we abort
+        const initialSelected = this.selectedMessage;
+        const messages: ChatMsg[] = this.#pushMessage({ role: Role.User, content: input });
 
         // Cancel previous stream if active, then start a new stream
         this.stopStream();
@@ -224,7 +229,7 @@ You are a capable, thoughtful, and precise assistant. Your goal is to understand
             const req: iface.ChatRequest = {
                 username: this.username,
                 modelName: modelName,
-                messages: this.messages
+                messages: messages
             };
 
             const res: Response = await fetch(new URL('/chat', this.server), {
@@ -283,9 +288,10 @@ You are a capable, thoughtful, and precise assistant. Your goal is to understand
             this.#pushMessage({ role: Role.LLM, content: final.fullResponse });
         } catch (err: any) {
             // Reset chat history
-            if (initialLength !== this.messages.length) {
-                this.messages.length = initialLength;
-                this.emit('message:set', this.messages);
+            if (initialSelected) {
+                this.selectedMessage = initialSelected;
+                this.emit('message:set', this.selectedMessage.getMessages());
+                this.emit('message:next', this.selectedMessage?.getNext()?.data);
             }
 
             if (err?.name === 'AbortError' || String(err?.message).toLowerCase().includes('aborted')) {
@@ -299,4 +305,32 @@ You are a capable, thoughtful, and precise assistant. Your goal is to understand
             this.stopStream();
         }
     }
+
+    // Move this.selectedMessage to its parent, if it exists (else no-op)
+    // Emit the 'next visible message' if we were to select the child
+    selectParent() {
+        if (!this.selectedMessage?.parent) return;
+
+        const prevParent = this.selectedMessage;
+        this.selectedMessage = this.selectedMessage.parent;
+        this.emit('message:set', this.selectedMessage.getMessages());
+        this.emit('message:next', prevParent.data);
+    }
+
+    // Move this.selectedMessage to its first child, if it exists (else no-op)
+    selectChild() {
+        if (!this.selectedMessage) return;
+        const child = this.selectedMessage.getNext();
+        if (!child) return;
+
+        this.selectedMessage = child;
+        this.emit('message:set', this.selectedMessage.getMessages());
+        this.emit('message:next', child.getNext()?.data);
+    }
+
+    // selectNextMessage() {
+    //     if (!this.selectedMessage?.parent) return;
+        
+    //     this.selectedMessage.parent.selectChild()
+    // }
 }

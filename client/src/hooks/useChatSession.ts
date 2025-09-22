@@ -4,20 +4,12 @@ import { type ServerStatus, type ModelInfo, type ChatMsg } from '../common.js';
 import { ChatSession } from '../chatSession.js';
 import { useEmitter } from './useEmitter.js';
 
-export type HistoryView = {
-    hist: ChatMsg[];
-    trim: number;
-}
-
-type Mode = 'ready' | 'stream';
-
 export function useChatSession(chat: ChatSession): {
     status: ServerStatus,
-    modelInfo: ModelInfo | null,
-    mode: Mode,
-    streamOutput: string | null,
-    history: HistoryView,
-    setHistory: React.Dispatch<React.SetStateAction<HistoryView>>,
+    modelInfo: ModelInfo,
+    history: ChatMsg[],
+    onScrollUp: () => void,
+    onScrollDown: () => void,
     stopStream: () => void,
     shutdown: () => void,
 } {
@@ -26,44 +18,28 @@ export function useChatSession(chat: ChatSession): {
     useEmitter(chat, 'server:status', (s: ServerStatus) => setStatus(s));
 
     // Model info
-    const [modelInfo, setModelInfo] = useState<ModelInfo | null>(null);
+    const [modelInfo, setModelInfo] = useState<ModelInfo>({
+        modelName: 'undefined',
+        params: '-',
+        quantization: '-'
+    });
     useEmitter(chat, 'model:set', (m: ModelInfo) => setModelInfo(m));
 
     /**
      * Scrollable chat history
      * 
-     * When we push a message to history, reset 'trim' to ensure
-     * the new message is rendered. This has the effect of jumping
-     * to the new message as it gets added.
-     * 
      * (Concept adapted from https://github.com/sasaplus1/inks/blob/main/packages/ink-scroll-box)
-     * 
-     * TODO - this is effectively managing 2 copies of history. one in chatSession, one via useState
-     * if there are issues with sync, we may want to have `setHistory` just read from chat.history().
      */
-    const [history, setHistory] = useState<HistoryView>({
-        hist: [],
-        trim: 0
-    });
-    useEmitter(chat, 'message:set', (hist: ChatMsg[]) => setHistory({ hist: hist, trim: 0 }));
+    const [history, setHistory] = useState<ChatMsg[]>([]);
+    useEmitter(chat, 'message:set', (hist) => setHistory(hist));
+    
+    const onScrollUp = useCallback(() => {
+        chat.selectParent();
+    }, [chat]);
 
-    /**
-     * Mode and chat stream output:
-     * - mode: ready => user can input
-     * - mode: stream => reading stream from llm
-     */
-    const [mode, setMode] = useState<Mode>('ready');
-    const [streamOutput, setStreamOutput] = useState('');
-
-    useEmitter(chat, 'stream:start', () => {
-        setStreamOutput('');
-        setMode('stream');
-    });
-    useEmitter(chat, 'stream:push', (content: string) => setStreamOutput(prev => prev + content));
-    useEmitter(chat, 'stream:end', () => {
-        setStreamOutput('');
-        setMode('ready');
-    });
+    const onScrollDown = useCallback(() => {
+        chat.selectChild();
+    }, [chat]);
     
     /**
      * Cancel/kill callbacks
@@ -82,11 +58,22 @@ export function useChatSession(chat: ChatSession): {
     return {
         status,
         modelInfo,
-        mode,
-        streamOutput,
-        history,
-        setHistory,
-        stopStream,
-        shutdown,
+        history, onScrollUp, onScrollDown,
+        stopStream, shutdown,
     };
+}
+
+export function useChatStream(params: {
+    chat: ChatSession, 
+    onStreamStart: () => void,
+    onStreamPush: (content: string) => void,
+    onStreamEnd: () => void,
+    onStreamAbort: () => void,
+    onMsgNext: (msg: ChatMsg | undefined) => void
+}) {
+    useEmitter(params.chat, 'stream:start', () => params.onStreamStart());
+    useEmitter(params.chat, 'stream:push', (content: string) => params.onStreamPush(content));
+    useEmitter(params.chat, 'stream:end', () => params.onStreamEnd());
+    useEmitter(params.chat, 'stream:abort', () => params.onStreamAbort());
+    useEmitter(params.chat, 'message:next', (msg: ChatMsg | undefined) => params.onMsgNext(msg));
 }
