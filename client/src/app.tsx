@@ -29,6 +29,7 @@ export default function App({ chat }: Props): React.ReactElement {
 		status,
 		modelInfo,
 		onScrollUp, onScrollDown,
+		onPrevHistory, onNextHistory,
 		stopStream, shutdown
 	} = useChatSession(chat);
 
@@ -37,30 +38,48 @@ export default function App({ chat }: Props): React.ReactElement {
 	// ctrl+m
 	//
 	// probably want like a single 'input manager' to direct input rather than competition b/w `useInput/TextInput`
+	//
+	// TODO:
+	//  - alt (press): toggle topic/thread panel, grey out all but 'preview'
+	// 		- display expanding list of topics, sorted by most active (cfg?)
+	//      -
+	//  	- up/down: swap topics
+	//      - left/right: swap threads within current topic
+	//      - enter: confirm selection
+	//      - ctrl+z: go back to previous
+	//
+	//      - alt (press again): close
 	useInput((input, key) => {
-		if (key.downArrow) {
-			onScrollDown();
-		}
-
-		if (key.upArrow) {
-			onScrollUp();
-		}
-		
-		// ink/src/hooks/use-input.ts has some special handling for ctrl+c
-		// i think we can read that sequence here, but probably need to init useInput differently somehow
+		// Handle commands:
+		// ctrl+w            - kill app
+		// ctrl+o            - stop llm
+		//
+		// ctrl+up/down      - scroll up/down
+		// ctrl+left/right   - move between message histories
 		if (key.ctrl) {
-			if (input.toLowerCase() === 'w') {
-				shutdown();
-				exit();
-			}
-			
-			if (input.toLowerCase() === 'o') {
-				stopStream();
+			switch (input) {
+				case 'w':
+					shutdown();
+					exit();
+					break;
+				case 'o':
+					stopStream();
+					break;
 			}
 
-			// if (key.rightArrow) {
-			// 	// TODO history switch	
-			// }
+			if (key.upArrow) {
+				// onScrollUp();
+			} else if (key.downArrow) {
+				// onScrollDown();
+			} else if (key.leftArrow) {
+				onPrevHistory();
+			} else if (key.rightArrow) {
+				onNextHistory();
+			}
+		} else if (key.pageUp) {
+			onScrollUp();
+		} else if (key.pageDown) {
+			onScrollDown();
 		}
 	});
 

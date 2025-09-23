@@ -1,5 +1,18 @@
 import { Role, type ChatMsg } from "../common.js";
 
+export type NodeInfo = {
+    history: ChatMsg[];
+    nextMessage: ChatMsg | undefined;
+
+    // length of the most recent thread in the node's history
+    // ... and our position in the thread. 
+    // if there are no parents with children.length > 1, this is undefined
+    lastThreadPosition: {
+        idx: number;
+        length: number;
+    } | undefined;
+}
+
 export type ChatRoot = {
     topic: string;
     node: ChatNode;
@@ -46,74 +59,129 @@ You are a capable, thoughtful, and precise assistant. Your goal is to understand
 
 export class ChatNode {
 
-    public parent?: ChatNode;
-    public children: ChatNode[] = [];
-
+    // This node's data
     public data: ChatMsg;
+
+    // This node's parent/children
+    public parent?: ChatNode;
+    public selectedChild?: number;
+    public children: ChatNode[] = [];
 
     constructor(data: ChatMsg) {
         this.data = data;
     }
 
-    isRoot(): boolean {
-        return this.parent === undefined;
-    }
-
-    hasNext(): boolean {
-        return this.children.length > 0;
-    }
-
-    // getNext creates a linear history by selecting the first element in
-    // this node's children array, if it exists.
-    getNext(): ChatNode | undefined {
-        return this.children.at(0);
-    }
-
-    // getFinal returns the final ChatNode in a linear history
-    getFinal(): ChatNode {
-        let cur: ChatNode = this;
-
-        while (cur.children.length > 0) {
-            cur = cur.children.at(0)
-                ?? (() => { throw new Error('(never) ChatNode.getFinal out of bounds') })();
-        }
-
-        return cur;
-    }
-
-    // Select a child by moving it to children[0], making it a part of the chat's linear history
-    selectChild(idx: number) {
-        const curSelected = this.children.at(0)
-            ?? (() => { throw new Error(`ChatNode.selectChild: 0 out of bounds (len: ${this.children.length})`) })();
-        const newSelected = this.children.at(idx)
-            ?? (() => { throw new Error(`ChatNode.selectChild: ${idx} out of bounds (len: ${this.children.length})`) })();
-
-        this.children[0] = newSelected;
-        this.children[idx] = curSelected;
-    }
-
-    // // Rotate children array so we select the 'next' child and switch to its linear history
-    // // i.e. children: [a, b, c] => [b, c, a]
-    // nextChild(): ChatMsg | undefined {
-    //     const curSelected = this.children.at(0);
-    //     const newSelected = this.children.at(1);
-
-    //     if (!curSelected || !newSelected) return;
-    //     // TODO finish
-    // }
-
-    // Push a new child to the front of children, selecting it as the default
-    push(data: ChatMsg) {
+    // Push a new child to the end of children, selecting it as default
+    newChild(data: ChatMsg): ChatNode {
         const child = new ChatNode(data);
         child.parent = this;
 
-        this.children.unshift(child);
+        this.children.push(child);
+        this.selectedChild = this.children.length - 1;
+
         return child;
+    }
+
+    // Change the active thread by incrementing going back to the last thread and incrementing
+    // its selection idx by 1
+    // - if there is no thread in our ancestors, this returns undefined
+    // - if incrementing causes a selection index to exceed the length of a node's children, the
+    //   index wraps back around to 0
+    //
+    // If successful, returns the top of the thread
+    selectNextThread(): ChatNode | undefined {
+        const lastThread = this.#findParentOfLastThread();
+        if (!lastThread) return;
+        if (lastThread.selectedChild === undefined) throw new Error('(never) selectNextThread: no child');
+
+        let newSelection = lastThread.selectedChild + 1;
+        if (newSelection >= lastThread.children.length) {
+            newSelection = 0;
+        }
+
+        lastThread.selectedChild = newSelection;
+
+        let bottom = lastThread.getSelectedChild();
+        while (bottom?.getSelectedChild()) {
+            bottom = bottom.getSelectedChild();
+        }
+
+        return bottom;
+    }
+
+    // Change the selected child by decrementing the selection idx by 1 and
+    // wrapping around to length - 1 if needed
+    selectPrevThread(): ChatNode | undefined {
+        const lastThread = this.#findParentOfLastThread();
+        if (!lastThread) return;
+        if (lastThread.selectedChild === undefined) throw new Error('(never) selectNextThread: no child');
+
+        let newSelection = lastThread.selectedChild - 1;
+        if (newSelection < 0) {
+            newSelection = lastThread.children.length - 1;
+        }
+
+        lastThread.selectedChild = newSelection;
+
+        let bottom = lastThread.getSelectedChild();
+        while (bottom?.getSelectedChild()) {
+            bottom = bottom.getSelectedChild();
+        }
+
+        return bottom;
+    }
+
+    // getSelectedChild creates a linear history by returning the selected child
+    getSelectedChild(): ChatNode | undefined {
+        if (this.selectedChild === undefined) return;
+
+        return this.children.at(this.selectedChild)
+            ?? (() => { throw new Error('(never) ChatNode.getSelectedChild got undefined') })();
+    }
+
+    getNodeInfo(): NodeInfo {
+        const lastThread: ChatNode | undefined = this.#findParentOfLastThread();
+        let lastThreadPosition: {
+            idx: number,
+            length: number
+        } | undefined = undefined;
+
+        if (lastThread) {
+            if (lastThread.selectedChild === undefined) throw new Error('(never) getNodeInfo: no selected child');
+
+            lastThreadPosition = {
+                idx: lastThread.selectedChild,
+                length: lastThread.children.length
+            };
+        }
+
+        return {
+            history: this.#getMessageHistory(),
+            nextMessage: this.getSelectedChild()?.data,
+            lastThreadPosition: lastThreadPosition,
+        };
+    }
+
+    #findParentOfLastThread(): ChatNode | undefined {
+        let cur: ChatNode | undefined = this;
+
+        // iterate as long as cur still exists
+        while (cur) {
+            // if we have siblings, we're at the thread root's nextMessage
+            let foundThread = cur.children.length > 1;
+            if (foundThread) {
+                return cur;
+            }
+
+            cur = cur.parent;
+        }
+
+        return undefined;
     }
 
     // Starting with a reference to some child, return the entire message history
     // by traversing upwards until we find the root node, then returning the reversed list
-    getMessages(): ChatMsg[] {
+    #getMessageHistory(): ChatMsg[] {
         const messages: ChatMsg[] = [];
         let cur: ChatNode | undefined = this;
 

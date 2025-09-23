@@ -23,18 +23,21 @@ export default function Message({ m }: Props): React.ReactElement {
         return LLMMessage({ content: m.content });
     } else {
         return (
-            <Box
-                flexDirection="row"
-                borderStyle="round"
-                borderColor="green"
-                flexShrink={0}
-                alignSelf="flex-end"
-                paddingLeft={2}
-                paddingRight={2}
-            >
-                {/* <Box borderStyle='round'><Text>{m.content}</Text></Box> */}
-                <Text>{m.content}</Text>
+            <Box flexDirection="row" flexShrink={0} alignSelf="flex-end" alignItems="flex-end">
+                <Box
+                    flexDirection="row"
+                    borderStyle="round"
+                    borderColor="green"
+                    alignSelf="flex-end"
+                    paddingLeft={2}
+                    paddingRight={2}
+                >
+                    <Text>{m.content}</Text>
+                </Box>
+                {/* TODO - pipe NodeInfo through */}
+                {/* <Text dimColor color="grey">{"< 1/2 >"}</Text> */}
             </Box>
+
         );
     }
 }

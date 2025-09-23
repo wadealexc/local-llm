@@ -9,6 +9,8 @@ export function useChatSession(chat: ChatSession): {
     modelInfo: ModelInfo,
     onScrollUp: () => void,
     onScrollDown: () => void,
+    onPrevHistory: () => void,
+    onNextHistory: () => void,
     stopStream: () => void,
     shutdown: () => void,
 } {
@@ -24,13 +26,32 @@ export function useChatSession(chat: ChatSession): {
     });
     useEmitter(chat, 'model:set', (m: ModelInfo) => setModelInfo(m));
     
-    // scrolling selects the 'current message' in the chat session
+    /**
+     * Scroll up/down callbacks
+     * 
+     * Scrolling up/down selects the prev/next message in the chat session
+     */
+
     const onScrollUp = useCallback(() => {
         chat.selectParent();
     }, [chat]);
 
     const onScrollDown = useCallback(() => {
         chat.selectChild();
+    }, [chat]);
+
+    /**
+     * Scroll left/right callbacks
+     * 
+     * Scrolling left/right selects the prev/next edit in the chat session
+     */
+
+    const onPrevHistory = useCallback(() => {
+        chat.selectPrevThread();
+    }, [chat]);
+
+    const onNextHistory = useCallback(() => {
+        chat.selectNextThread();
     }, [chat]);
     
     /**
@@ -51,6 +72,7 @@ export function useChatSession(chat: ChatSession): {
         status,
         modelInfo,
         onScrollUp, onScrollDown,
+        onPrevHistory, onNextHistory,
         stopStream, shutdown,
     };
 }

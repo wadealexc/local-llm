@@ -25,7 +25,7 @@ export class ChatSession extends EventEmitter {
 
     // Keep track of all chats, as well as the currently-active chat and the working index in that chat
     private chatTree: ChatTree;
-    private selectedMessage?: ChatNode;
+    private currentMessage?: ChatNode;
 
     constructor(server: string, username: string) {
         super();
@@ -43,10 +43,9 @@ export class ChatSession extends EventEmitter {
     newTopic(topic: string, modelName: string) {
         const root: ChatNode = this.chatTree.pushTopic(topic, modelName, this.server);
         // this.emit('topic:new'); // TODO
-        this.selectedMessage = root;
 
-        const messages = root.getMessages();
-        this.emit('message:set', messages);
+        this.currentMessage = root;
+        this.emit('message:set', root.getNodeInfo());
     }
 
     // Connect to server and fetch models
@@ -197,15 +196,15 @@ export class ChatSession extends EventEmitter {
 
     // TODO - this.emit is sync, which may mean we are blocking while history re-renders?
     #pushMessage(m: ChatMsg): ChatMsg[] {
-        if (!this.selectedMessage) throw new Error('chatSession.pushMessage called before topic created');
+        if (!this.currentMessage) throw new Error('chatSession.pushMessage called before topic created');
 
-        const child = this.selectedMessage.push(m);
-        this.selectedMessage = child;
+        const newMessage = this.currentMessage.newChild(m);
+        this.currentMessage = newMessage;
 
-        const messages = child.getMessages();
-        this.emit('message:set', messages);
+        const info = newMessage.getNodeInfo();
+        this.emit('message:set', info);
 
-        return messages;
+        return info.history;
     }
 
     // Possible bad entry states:
@@ -217,7 +216,7 @@ export class ChatSession extends EventEmitter {
             ?? (() => { throw new Error(`chatSession.prompt called before model available`) })();
 
         // Push message to chat history, saving our place in case we abort
-        const initialSelected = this.selectedMessage;
+        const initialSelected = this.currentMessage;
         const messages: ChatMsg[] = this.#pushMessage({ role: Role.User, content: input });
 
         // Cancel previous stream if active, then start a new stream
@@ -289,9 +288,8 @@ export class ChatSession extends EventEmitter {
         } catch (err: any) {
             // Reset chat history
             if (initialSelected) {
-                this.selectedMessage = initialSelected;
-                this.emit('message:set', this.selectedMessage.getMessages());
-                this.emit('message:next', this.selectedMessage?.getNext()?.data);
+                this.currentMessage = initialSelected;
+                this.emit('message:set', this.currentMessage.getNodeInfo());
             }
 
             if (err?.name === 'AbortError' || String(err?.message).toLowerCase().includes('aborted')) {
@@ -306,31 +304,39 @@ export class ChatSession extends EventEmitter {
         }
     }
 
-    // Move this.selectedMessage to its parent, if it exists (else no-op)
+    // Move this.currentMessage to its parent, if it exists (else no-op)
     // Emit the 'next visible message' if we were to select the child
     selectParent() {
-        if (!this.selectedMessage?.parent) return;
+        if (!this.currentMessage?.parent) return;
 
-        const prevParent = this.selectedMessage;
-        this.selectedMessage = this.selectedMessage.parent;
-        this.emit('message:set', this.selectedMessage.getMessages());
-        this.emit('message:next', prevParent.data);
+        const child = this.currentMessage;
+        this.currentMessage = this.currentMessage.parent;
+        this.emit('message:set', this.currentMessage.getNodeInfo());
     }
 
-    // Move this.selectedMessage to its first child, if it exists (else no-op)
+    // Move this.currentMessage to its selected child, if it exists (else no-op)
     selectChild() {
-        if (!this.selectedMessage) return;
-        const child = this.selectedMessage.getNext();
+        const child = this.currentMessage?.getSelectedChild();
         if (!child) return;
 
-        this.selectedMessage = child;
-        this.emit('message:set', this.selectedMessage.getMessages());
-        this.emit('message:next', child.getNext()?.data);
+        this.currentMessage = child;
+        this.emit('message:set', child.getNodeInfo());
     }
 
-    // selectNextMessage() {
-    //     if (!this.selectedMessage?.parent) return;
-        
-    //     this.selectedMessage.parent.selectChild()
-    // }
+    // Move between chat siblings if they exist (else no-op)
+    selectNextThread() {
+        const sibling = this.currentMessage?.parent?.selectNextThread();
+        if (!sibling) return;
+
+        this.currentMessage = sibling;
+        this.emit('message:set', sibling.getNodeInfo());
+    }
+
+    selectPrevThread() {
+        const sibling = this.currentMessage?.parent?.selectPrevThread();
+        if (!sibling) return;
+
+        this.currentMessage = sibling;
+        this.emit('message:set', sibling.getNodeInfo());
+    }
 }

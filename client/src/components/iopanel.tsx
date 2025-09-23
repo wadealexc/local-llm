@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Box, Text, Newline } from 'ink';
 import TextInput from 'ink-text-input';
 import { Spinner } from '@inkjs/ui';
@@ -7,6 +7,8 @@ import { ChatSession } from '../chatSession.js';
 import { useEmitter } from '../hooks/useEmitter.js';
 import Message, { LLMMessage } from './message.js';
 import { Role, type ChatMsg } from '../common.js';
+import type { ChatNode, NodeInfo } from '../utils/chatTree.js';
+import chalk from 'chalk';
 
 type Props = {
     chat: ChatSession;
@@ -25,6 +27,13 @@ export default function IOPanel({
 
     const [mode, setMode] = useState<Mode>(Mode.USER_INPUT);
     const [streamOutput, setStreamOutput] = useState('');
+
+    const [position, setPosition] = useState<{
+        idx: number,
+        length: number
+    } | undefined>(undefined);
+
+    // const [curInfo, setInfo] = useState<NodeInfo | undefined>(undefined);
 
     /**
      * Stream event listeners
@@ -49,20 +58,32 @@ export default function IOPanel({
         setMode(Mode.USER_INPUT);
     });
 
-    // `message:next` displays the next message in the linear chat history, if it
-    // exists. This is used when we scroll up and down, as the 'next' message is
-    // not visible in the message history, but can be used to set the 'user input'
-    // for editing purposes.
+    // `info.nextMessage` displays the next message in the linear chat history, if it
+    // exists. This is used when we scroll between messages/edits, as the 'next' message
+    // is rendered in the message history, but is used to populate the user input bar.
     //
     // TODO - this is somewhat janky, and we're missing a feature - remembering
     // what the user was typing at the very bottom of the chat window.
-    useEmitter(chat, 'message:next', (msg: ChatMsg | undefined) => {
-        if (msg && msg.role === Role.User) {
-            setUserInput(msg.content);
+    useEmitter(chat, 'message:set', (info: NodeInfo) => {
+        setPosition(info.lastThreadPosition);
+        // setInfo(info);
+        
+        if (info.nextMessage && info.nextMessage.role === Role.User) {
+            setUserInput(info.nextMessage.content);
         } else {
             setUserInput('');
         }
     });
+
+    const calcSiblingString = (pos: { idx: number, length: number } | undefined): string => {
+        return pos ? chalk.magenta(` [${pos.idx+1} of ${pos.length}] `) : '';
+        
+        // const notSelected = chalk.white('□');
+        // const selected = chalk.white('■');
+        // return Array.from({ length: pos.length }, (_, i) =>
+        //     i === pos.idx ? selected : notSelected
+        // ).join(' |');
+    };
 
     return (
         <Box flexDirection="column" flexShrink={0}>
@@ -102,9 +123,36 @@ export default function IOPanel({
             </Box>
 
             {/* Command hint box */}
-            <Box flexDirection="row" flexShrink={0} justifyContent="center">
-                <Text italic={true} dimColor color="grey">ctrl+w to exit | enter to send | up/down arrow to scroll</Text>
+            <Box flexDirection="row" flexShrink={0} alignSelf="center">
+                <Box flexDirection="row" flexShrink={0} alignSelf="center">
+                    <Text italic={true}>
+                        {position 
+                            ? `${chalk.bold('ctrl+w')}: exit | ${chalk.bold('pgUp/pgDn')}: scroll window | ${chalk.bold('ctrl+left/right')}: change threads`
+                            : `${chalk.bold('ctrl+w')}: exit | ${chalk.bold('pgUp/pgDn')}: scroll window`
+                        }
+                        
+                        {/* to exit | ctrl+up/down: scroll (window) | ctrl+left/right */}
+                    </Text>
+                </Box>
+
+                <Box flexDirection="row" flexShrink={0} alignSelf="flex-end">
+                    <Text dimColor>{calcSiblingString(position)}</Text>
+                </Box>
+
+                {/* <Box flexDirection="row" flexShrink={0} alignSelf="flex-end">
+                    {curInfo && (
+                        <Text dimColor>{` (hist len: ${curInfo.history.length} / nextMsg?: ${curInfo.nextMessage})`}</Text>
+                    )}
+                </Box> */}
             </Box>
+
+            
+            
+
+            {/* {position.length >} */}
+            {/* <Box flexDirection="row" flexShrink={0} justifyContent="center">
+                
+            </Box> */}
         </Box>
     );
 }
