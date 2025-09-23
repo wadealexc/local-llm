@@ -7,7 +7,6 @@ import { useEmitter } from './useEmitter.js';
 export function useChatSession(chat: ChatSession): {
     status: ServerStatus,
     modelInfo: ModelInfo,
-    history: ChatMsg[],
     onScrollUp: () => void,
     onScrollDown: () => void,
     stopStream: () => void,
@@ -24,15 +23,8 @@ export function useChatSession(chat: ChatSession): {
         quantization: '-'
     });
     useEmitter(chat, 'model:set', (m: ModelInfo) => setModelInfo(m));
-
-    /**
-     * Scrollable chat history
-     * 
-     * (Concept adapted from https://github.com/sasaplus1/inks/blob/main/packages/ink-scroll-box)
-     */
-    const [history, setHistory] = useState<ChatMsg[]>([]);
-    useEmitter(chat, 'message:set', (hist) => setHistory(hist));
     
+    // scrolling selects the 'current message' in the chat session
     const onScrollUp = useCallback(() => {
         chat.selectParent();
     }, [chat]);
@@ -58,22 +50,7 @@ export function useChatSession(chat: ChatSession): {
     return {
         status,
         modelInfo,
-        history, onScrollUp, onScrollDown,
+        onScrollUp, onScrollDown,
         stopStream, shutdown,
     };
-}
-
-export function useChatStream(params: {
-    chat: ChatSession, 
-    onStreamStart: () => void,
-    onStreamPush: (content: string) => void,
-    onStreamEnd: () => void,
-    onStreamAbort: () => void,
-    onMsgNext: (msg: ChatMsg | undefined) => void
-}) {
-    useEmitter(params.chat, 'stream:start', () => params.onStreamStart());
-    useEmitter(params.chat, 'stream:push', (content: string) => params.onStreamPush(content));
-    useEmitter(params.chat, 'stream:end', () => params.onStreamEnd());
-    useEmitter(params.chat, 'stream:abort', () => params.onStreamAbort());
-    useEmitter(params.chat, 'message:next', (msg: ChatMsg | undefined) => params.onMsgNext(msg));
 }

@@ -12,6 +12,7 @@ import Status from './components/status.js';
 import ModelInfo from './components/modelInfo.js';
 import Message from './components/message.js';
 import { Role } from './common.js';
+import MessageHistory from './components/messageHistory.js';
 
 type Props = {
 	chat: ChatSession;
@@ -27,13 +28,9 @@ export default function App({ chat }: Props): React.ReactElement {
 	const {
 		status,
 		modelInfo,
-		history, onScrollUp, onScrollDown,
+		onScrollUp, onScrollDown,
 		stopStream, shutdown
 	} = useChatSession(chat);
-
-	const [userInput, setUserInput] = useState('');
-	const [lastInput, setLastInput] = useState('');
-	const [promptTrim, setPromptTrim] = useState(0);
 
 	// Broken/wonky:
 	// ctrl+c
@@ -82,18 +79,7 @@ export default function App({ chat }: Props): React.ReactElement {
 			</Box>
 
 			{/* Scrollable message history */}
-			<Box flexDirection="column" flexGrow={1} justifyContent="flex-end" overflow="hidden">
-				{history.map((m, idx) => {
-					return (
-						<Message
-							key={idx}
-							m={m}
-							modelName={modelInfo?.modelName}
-							userName={chat.username}
-						/>
-					);
-				})}
-			</Box>
+			<MessageHistory chat={chat} />
 
 			{/* user input/llm output */}
 			<IOPanel chat={chat} />
