@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import type { ChatSession } from "../chatSession.js"
 import { useEmitter } from '../hooks/useEmitter.js';
 import type { ChatMsg } from '../common.js';
@@ -22,14 +22,7 @@ export default function MessageHistory({ chat }: Props): React.ReactElement {
     return (
         <Box flexDirection="column" flexGrow={1} justifyContent="flex-end" overflow="hidden">
             {history.map((m, idx) => {
-                return (
-                    <Message
-                        key={idx}
-                        m={m}
-                        modelName={chat.currentModel?.modelName}
-                        userName={chat.username}
-                    />
-                );
+                return <Message key={idx} m={m}/>;
             })}
         </Box>
     );

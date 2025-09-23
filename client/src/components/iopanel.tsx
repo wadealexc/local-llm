@@ -65,7 +65,7 @@ export default function IOPanel({
     });
 
     return (
-        <Box flexDirection="column">
+        <Box flexDirection="column" flexShrink={0}>
             {/* Stream output, visible only when reading a stream from the chat session */}
             {mode === Mode.STREAM_OUTPUT && (
                 <Box flexShrink={0}>

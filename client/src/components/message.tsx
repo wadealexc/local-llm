@@ -6,19 +6,13 @@ import { Role, type ChatMsg } from '../common.js';
 
 type Props = {
     m: ChatMsg;
-    modelName: string | undefined;
-    userName: string;
 }
 
 type LLMMsgProps = {
     content: string;
 }
 
-export default function Message({
-    m,
-    modelName,
-    userName,
-}: Props): React.ReactElement {
+export default function Message({ m }: Props): React.ReactElement {
     if (m.role === Role.System) {
         return (
             <Box borderStyle="double" borderTop={true} borderBottom={true} flexShrink={0} paddingX={1}>
