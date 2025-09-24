@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import type { ChatSession } from "../chatSession.js"
 import { useEmitter } from '../hooks/useEmitter.js';
 import type { ChatMsg } from '../common.js';

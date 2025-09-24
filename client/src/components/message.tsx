@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Text, Newline } from 'ink';
+import { Box, Text } from 'ink';
 import chalk from 'chalk';
 
 import { Role, type ChatMsg } from '../common.js';

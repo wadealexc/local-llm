@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 
-import { type ServerStatus, type ModelInfo, type ChatMsg } from '../common.js';
+import { type ServerStatus, type ModelInfo } from '../common.js';
 import { ChatSession } from '../chatSession.js';
 import { useEmitter } from './useEmitter.js';
 

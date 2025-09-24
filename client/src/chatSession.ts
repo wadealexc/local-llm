@@ -1,5 +1,4 @@
 import { EventEmitter } from 'events';
-import { type Message } from 'ollama';
 
 import * as iface from '@local-llm/protocol';
 
