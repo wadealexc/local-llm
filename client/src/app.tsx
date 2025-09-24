@@ -1,8 +1,5 @@
-import React, { useState, useRef, useEffect, useReducer, useMemo } from 'react';
-import { Box, Text, Newline, Spacer, Static, useStdout, useInput, useApp } from 'ink';
-import { Spinner } from '@inkjs/ui';
-import TextInput from 'ink-text-input';
-import chalk from 'chalk';
+import React, { useState } from 'react';
+import { Box, useInput, useApp } from 'ink';
 
 import { ChatSession } from './chatSession.js';
 import { useChatSession } from './hooks/useChatSession.js';
@@ -10,9 +7,8 @@ import { useStdoutDimensions } from './hooks/useStdoutDimensions.js';
 import IOPanel from './components/iopanel.js';
 import Status from './components/status.js';
 import ModelInfo from './components/modelInfo.js';
-import Message from './components/message.js';
-import { Role } from './common.js';
 import MessageHistory from './components/messageHistory.js';
+import LogPanel from './components/logPanel.js';
 
 type Props = {
 	chat: ChatSession;
@@ -32,6 +28,8 @@ export default function App({ chat }: Props): React.ReactElement {
 		onPrevHistory, onNextHistory,
 		stopStream, shutdown
 	} = useChatSession(chat);
+
+	const [debugMode, toggleDebug] = useState(false);
 
 	// Broken/wonky:
 	// ctrl+c
@@ -65,6 +63,9 @@ export default function App({ chat }: Props): React.ReactElement {
 				case 'o':
 					stopStream();
 					break;
+				case 'f':
+					toggleDebug(!debugMode);
+					break;
 			}
 
 			if (key.upArrow) {
@@ -85,17 +86,22 @@ export default function App({ chat }: Props): React.ReactElement {
 
 	return (
 		<Box flexDirection="column" height={dimensions.rows} width={dimensions.columns}>
-			<Box flexDirection="row" flexShrink={0} paddingTop={1}>
-				{/* app+server status box */}
-				<Status
-					appName={APP_NAME}
-					appVersion={APP_VERSION}
-					hostName={chat.server}
-					serverStatus={status}
-				/>
-				{/* model info box */}
-				<ModelInfo modelInfo={modelInfo} />
+			<Box flexDirection="column" flexShrink={0} paddingTop={1}>
+				<Box flexDirection="row" flexShrink={0}>
+					{/* app+server status box */}
+					<Status
+						appName={APP_NAME}
+						appVersion={APP_VERSION}
+						hostName={chat.server}
+						serverStatus={status}
+					/>
+					{/* model info box */}
+					<ModelInfo modelInfo={modelInfo} />
+				</Box>
+
+				<LogPanel visible={debugMode}/>
 			</Box>
+			
 
 			{/* Scrollable message history */}
 			<MessageHistory chat={chat} />

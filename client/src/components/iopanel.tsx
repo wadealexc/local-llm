@@ -1,14 +1,16 @@
-import React, { useRef, useState } from 'react';
-import { Box, Text, Newline } from 'ink';
+import React, { useState } from 'react';
+
+import { Box, Text } from 'ink';
 import TextInput from 'ink-text-input';
 import { Spinner } from '@inkjs/ui';
+import chalk from 'chalk';
 
 import { ChatSession } from '../chatSession.js';
 import { useEmitter } from '../hooks/useEmitter.js';
-import Message, { LLMMessage } from './message.js';
-import { Role, type ChatMsg } from '../common.js';
-import type { ChatNode, NodeInfo } from '../utils/chatTree.js';
-import chalk from 'chalk';
+import { LLMMessage } from './message.js';
+import { Role } from '../common.js';
+import type { NodeInfo } from '../utils/chatTree.js';
+import { useLogSend } from '../hooks/useLogs.js';
 
 type Props = {
     chat: ChatSession;
@@ -23,8 +25,9 @@ export default function IOPanel({
     chat,
 }: Props): React.ReactElement {
 
-    const [userInput, setUserInput] = useState('');
+    const log = useLogSend('iopanel');
 
+    const [userInput, setUserInput] = useState('');
     const [mode, setMode] = useState<Mode>(Mode.USER_INPUT);
     const [streamOutput, setStreamOutput] = useState('');
 
@@ -33,8 +36,6 @@ export default function IOPanel({
         length: number
     } | undefined>(undefined);
 
-    // const [curInfo, setInfo] = useState<NodeInfo | undefined>(undefined);
-
     /**
      * Stream event listeners
      */
@@ -42,6 +43,7 @@ export default function IOPanel({
     useEmitter(chat, 'stream:start', () => {
         setStreamOutput('');
         setMode(Mode.STREAM_OUTPUT);
+        log.info('stream:start');
     });
 
     useEmitter(chat, 'stream:push', (content: string) => {
@@ -51,11 +53,13 @@ export default function IOPanel({
     useEmitter(chat, 'stream:end', () => {
         setStreamOutput('');
         setMode(Mode.USER_INPUT);
+        log.info('stream:end');
     });
 
     useEmitter(chat, 'stream:abort', () => {
         setStreamOutput('');
         setMode(Mode.USER_INPUT);
+        log.info('stream:abort');
     });
 
     // `info.nextMessage` displays the next message in the linear chat history, if it
@@ -65,8 +69,8 @@ export default function IOPanel({
     // TODO - this is somewhat janky, and we're missing a feature - remembering
     // what the user was typing at the very bottom of the chat window.
     useEmitter(chat, 'message:set', (info: NodeInfo) => {
+        log.info(`next message from: ${info.nextMessage?.role} | history length: ${info.history.length}`);
         setPosition(info.lastThreadPosition);
-        // setInfo(info);
         
         if (info.nextMessage && info.nextMessage.role === Role.User) {
             setUserInput(info.nextMessage.content);
@@ -77,12 +81,6 @@ export default function IOPanel({
 
     const calcSiblingString = (pos: { idx: number, length: number } | undefined): string => {
         return pos ? chalk.magenta(` [${pos.idx+1} of ${pos.length}] `) : '';
-        
-        // const notSelected = chalk.white('□');
-        // const selected = chalk.white('■');
-        // return Array.from({ length: pos.length }, (_, i) =>
-        //     i === pos.idx ? selected : notSelected
-        // ).join(' |');
     };
 
     return (
@@ -108,6 +106,7 @@ export default function IOPanel({
                         placeholder="send a message"
                         onChange={setUserInput}
                         onSubmit={(entered) => {
+                            log.info('user submitted text');
                             setUserInput('');
                             chat.prompt(entered);
                         }}
@@ -130,29 +129,13 @@ export default function IOPanel({
                             ? `${chalk.bold('ctrl+w')}: exit | ${chalk.bold('pgUp/pgDn')}: scroll window | ${chalk.bold('ctrl+left/right')}: change threads`
                             : `${chalk.bold('ctrl+w')}: exit | ${chalk.bold('pgUp/pgDn')}: scroll window`
                         }
-                        
-                        {/* to exit | ctrl+up/down: scroll (window) | ctrl+left/right */}
                     </Text>
                 </Box>
 
                 <Box flexDirection="row" flexShrink={0} alignSelf="flex-end">
                     <Text dimColor>{calcSiblingString(position)}</Text>
                 </Box>
-
-                {/* <Box flexDirection="row" flexShrink={0} alignSelf="flex-end">
-                    {curInfo && (
-                        <Text dimColor>{` (hist len: ${curInfo.history.length} / nextMsg?: ${curInfo.nextMessage})`}</Text>
-                    )}
-                </Box> */}
             </Box>
-
-            
-            
-
-            {/* {position.length >} */}
-            {/* <Box flexDirection="row" flexShrink={0} justifyContent="center">
-                
-            </Box> */}
         </Box>
     );
 }

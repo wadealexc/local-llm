@@ -5,12 +5,15 @@ import type { ChatMsg } from '../common.js';
 import { Box } from 'ink';
 import Message from './message.js';
 import type { NodeInfo } from '../utils/chatTree.js';
+import { useLogSend } from '../hooks/useLogs.js';
 
 type Props = {
     chat: ChatSession;
 }
 
 export default function MessageHistory({ chat }: Props): React.ReactElement {
+
+    const log = useLogSend('messagehist');
 
     /**
      * Scrollable chat history
